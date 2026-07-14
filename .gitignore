@@ -1,0 +1,24 @@
+# Node.js dependencies (THIS IS THE MOST IMPORTANT ONE)
+node_modules/
+
+# Build folders
+dist/
+build/
+out/
+
+# Environment variables (NEVER commit these)
+.env
+.env.local
+
+# Database files
+*.db
+*.sqlite
+*.sqlite-journal
+
+# Logs
+*.log
+npm-debug.log*
+
+# System files
+.DS_Store
+Thumbs.db
