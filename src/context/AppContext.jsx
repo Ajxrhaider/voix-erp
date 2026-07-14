@@ -35,7 +35,7 @@ export function AppProvider({ children }) {
   // Authenticated fetch wrapper injecting Bearer token
   const authFetch = async (url, options = {}) => {
     // Automatically prepend the API_URL if the path doesn't already start with http
-    const fullUrl = url.startsWith('http') ? url : `${API_URL}${url}`;
+    const finalUrl = url.startsWith('http') ? url : `${API_URL}${url}`;
     
     const headers = {
       'Content-Type': 'application/json',
@@ -43,7 +43,8 @@ export function AppProvider({ children }) {
       ...(options.headers || {})
     };
 
-    const response = await fetch(fullUrl, { ...options, headers });
+    const response = await fetch(finalUrl, { ...options, headers });
+
     if (response.status === 401 || response.status === 403) {
       logoutUser();
     }
