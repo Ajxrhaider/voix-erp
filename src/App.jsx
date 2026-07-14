@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { AppProvider, AppContext } from './context/AppContext';
 import AuthModule from './components/Auth/AuthModule'; // Fixed import path
-import { Users, Network, Calculator, Wrench, Briefcase, TrendingUp, LogOut, Coins } from 'lucide-react';
+import { Users, Network, Calculator, Wrench, Briefcase, TrendingUp, LogOut, Coins, Layers } from 'lucide-react';
  // Import new module
 
 // Core Business Modules
@@ -12,6 +12,7 @@ import FieldModule from './components/FieldModule';
 import SalesModule from './components/SalesModule';     
 import ManagementModule from './components/ManagementModule'; 
 import HRModule from './components/HR/HRModule';
+import CTOModule from './components/Operations/CTOModule';
 
 function Layout({ children, activeTab, setActiveTab }) {
   const { user, logoutUser } = useContext(AppContext);
@@ -23,6 +24,7 @@ function Layout({ children, activeTab, setActiveTab }) {
   { id: 'crm', label: 'Customer Service', icon: Users, roles: ['dev', 'noc', 'sales', 'management'] },
   { id: 'sales', label: 'Sales & Surveys', icon: TrendingUp, roles: ['dev', 'sales', 'management'] },
   { id: 'noc', label: 'NOC Dispatch', icon: Network, roles: ['dev', 'noc', 'management'] },
+  { id: 'cto', label: 'CTO Planning & Dispatch', icon: Layers, roles: ['dev', 'noc', 'management'] },
   { id: 'field', label: 'Field Crews', icon: Wrench, roles: ['dev', 'fiber', 'noc'] },
   { id: 'accounting', label: 'Accounting Matrix', icon: Calculator, roles: ['dev', 'account', 'management'] },
   { id: 'hr_payroll', label: 'HR & Payroll Engine', icon: Coins, roles: ['dev', 'account', 'management'] }, // ADDED TAB
@@ -88,6 +90,7 @@ function AppContent() {
       {activeTab === 'accounting' && <AccountingModule />}
       {activeTab === 'hr_payroll' && <HRModule />} {/* ADDED INTERACTIVE COMPONENT ROUTE */}
       {activeTab === 'management' && <ManagementModule />}
+      {activeTab === 'cto' && <CTOModule />} {/* ADDED INTERACTIVE COMPONENT ROUTE */}
     </Layout>
   );
 }
