@@ -1,5 +1,8 @@
 import React, { useState, useContext } from 'react';
-import { AppContext } from '../../context/AppContext'; // Fixed relative directory jump
+import { AppContext } from '../../context/AppContext';
+
+// 1. Add the API_URL variable at the top
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function AuthModule() {
   const { loginUser } = useContext(AppContext);
@@ -12,16 +15,30 @@ export default function AuthModule() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const endpoint = isLogin ? '/api/login' : '/api/register';
+    
+    // 2. Prepend the API_URL to the endpoints
+    const endpoint = isLogin ? `${API_URL}/api/login` : `${API_URL}/api/register`;
     const payload = isLogin ? { username, password } : { username, password, fullname, role };
 
     try {
-      const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const res = await fetch(endpoint, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      });
+      
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
-      if (isLogin) loginUser(data.token);
-      else { alert('Registered!'); setIsLogin(true); }
-    } catch (err) { setError(err.message); }
+      
+      if (isLogin) {
+        loginUser(data.token);
+      } else { 
+        alert('Registered!'); 
+        setIsLogin(true); 
+      }
+    } catch (err) { 
+      setError(err.message); 
+    }
   };
 
   return (
