@@ -1,6 +1,6 @@
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export const AppContext = createContext();
 
