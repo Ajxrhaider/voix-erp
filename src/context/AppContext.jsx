@@ -90,7 +90,7 @@ export function AppProvider({ children }) {
     setEmployees([]);
     localStorage.removeItem('token');
   };
-
+  
   return (
     <AppContext.Provider value={{
       token,
