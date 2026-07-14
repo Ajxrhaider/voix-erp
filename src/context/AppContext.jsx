@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export const AppContext = createContext();
 
@@ -33,13 +34,16 @@ export function AppProvider({ children }) {
 
   // Authenticated fetch wrapper injecting Bearer token
   const authFetch = async (url, options = {}) => {
+    // Automatically prepend the API_URL if the path doesn't already start with http
+    const fullUrl = url.startsWith('http') ? url : `${API_URL}${url}`;
+    
     const headers = {
       'Content-Type': 'application/json',
       ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...(options.headers || {})
     };
 
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(fullUrl, { ...options, headers });
     if (response.status === 401 || response.status === 403) {
       logoutUser();
     }
