@@ -185,7 +185,39 @@ app.put('/api/hr/payroll-adjustments/:employeeId', authenticateToken, (req, res)
   db.prepare(`UPDATE payroll_adjustments SET ${sets} WHERE employeeId = ?`).run(...values);
   res.json({ success: true });
 });
+// --- VEHICLES / FLEET ---
+app.get('/api/vehicles', authenticateToken, (req, res) => {
+  res.json(db.prepare("SELECT * FROM vehicles").all());
+});
+app.post('/api/vehicles', authenticateToken, (req, res) => {
+  const { plateNumber, model, fuelLevel, lastMaintenance } = req.body;
+  const result = db.prepare("INSERT INTO vehicles (plateNumber, model, fuelLevel, lastMaintenance) VALUES (?, ?, ?, ?)").run(plateNumber, model, fuelLevel, lastMaintenance);
+  res.json({ id: result.lastInsertRowid });
+});
 
+// --- DAILY FIELD REPORTS ---
+app.get('/api/daily-reports', authenticateToken, (req, res) => {
+  res.json(db.prepare("SELECT * FROM daily_reports ORDER BY id DESC").all());
+});
+app.post('/api/daily-reports', authenticateToken, (req, res) => {
+  const { crewId, date, splices, locations, highlights } = req.body;
+  const result = db.prepare("INSERT INTO daily_reports (crewId, date, splices, locations, highlights, submittedBy) VALUES (?, ?, ?, ?, ?, ?)").run(crewId, date, splices, locations, highlights, req.user.username);
+  res.json({ success: true, id: result.lastInsertRowid });
+});
+
+// --- REQUISITIONS ---
+app.get('/api/requisitions', authenticateToken, (req, res) => {
+  res.json(db.prepare("SELECT * FROM requisitions ORDER BY id DESC").all());
+});
+app.post('/api/requisitions', authenticateToken, (req, res) => {
+  const { department, item, quantity, estimatedCost } = req.body;
+  const result = db.prepare("INSERT INTO requisitions (department, item, quantity, estimatedCost, requestedBy) VALUES (?, ?, ?, ?, ?)").run(department, item, quantity, estimatedCost, req.user.username);
+  res.json({ success: true, id: result.lastInsertRowid });
+});
+app.put('/api/requisitions/:id', authenticateToken, (req, res) => {
+  db.prepare("UPDATE requisitions SET status = ? WHERE id = ?").run(req.body.status, req.params.id);
+  res.json({ success: true });
+});
 // Change the listen block to this:
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

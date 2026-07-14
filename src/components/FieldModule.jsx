@@ -112,6 +112,17 @@ export default function FieldModule() {
                     ))}
                   </div>
                 </div>
+                {/* DAILY ACTIVITY REPORT - Add this inside your FieldModule return statement */}
+                <div className="mt-8 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                  <h3 className="font-bold text-slate-800 mb-4">End of Day Activity Report</h3>
+                  <form className="grid grid-cols-1 md:grid-cols-3 gap-4" onSubmit={(e) => { e.preventDefault(); alert("Report submitted successfully."); }}>
+                    <input type="date" className="border p-2 rounded text-sm w-full" required />
+                    <input type="number" placeholder="Total Splices Made" className="border p-2 rounded text-sm w-full" required />
+                    <input type="text" placeholder="Locations Covered" className="border p-2 rounded text-sm w-full" required />
+                    <textarea placeholder="Highlights & Issues encountered on the field" className="border p-2 rounded text-sm w-full md:col-span-3 h-20"></textarea>
+                    <button type="submit" className="bg-emerald-600 text-white px-4 py-2 rounded text-sm font-medium md:col-span-3">Submit Daily Report to Command Desk</button>
+                  </form>
+                </div>
 
                 {wo.status === "Assigned" && (
                   <button onClick={() => handleStoreCheckout(wo)} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded text-xs flex items-center justify-center space-x-1.5"><Package className="w-4 h-4" /><span>Withdraw Materials (Deduct Inventory)</span></button>

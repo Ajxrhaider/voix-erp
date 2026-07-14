@@ -2,7 +2,8 @@ import React, { useState, useContext, useEffect } from 'react';
 import { AppProvider, AppContext } from './context/AppContext';
 import AuthModule from './components/Auth/AuthModule'; // Fixed import path
 import { Users, Network, Calculator, Wrench, Briefcase, TrendingUp, LogOut, Coins, Layers } from 'lucide-react';
- // Import new module
+import { ShoppingCart, Truck } from 'lucide-react'; // Ensure these icons are imported
+// Import new module
 
 // Core Business Modules
 import CRMModule from './components/CRM/CRMModule';
@@ -13,6 +14,8 @@ import SalesModule from './components/SalesModule';
 import ManagementModule from './components/ManagementModule'; 
 import HRModule from './components/HR/HRModule';
 import CTOModule from './components/Operations/CTOModule';
+import FleetModule from './components/Operations/FleetModule';
+import RequisitionsModule from './components/RequisitionsModule';
 
 function Layout({ children, activeTab, setActiveTab }) {
   const { user, logoutUser } = useContext(AppContext);
@@ -28,7 +31,9 @@ function Layout({ children, activeTab, setActiveTab }) {
   { id: 'field', label: 'Field Crews', icon: Wrench, roles: ['dev', 'fiber', 'noc'] },
   { id: 'accounting', label: 'Accounting Matrix', icon: Calculator, roles: ['dev', 'account', 'management'] },
   { id: 'hr_payroll', label: 'HR & Payroll Engine', icon: Coins, roles: ['dev', 'account', 'management'] }, // ADDED TAB
-  { id: 'management', label: 'GM Command Desk', icon: Briefcase, roles: ['dev', 'management'] }
+  { id: 'management', label: 'GM Command Desk', icon: Briefcase, roles: ['dev', 'management'] },
+  { id: 'fleet', label: 'Fleet & Logistics', icon: Truck, roles: ['dev', 'noc', 'management', 'cto'] },
+  { id: 'requisitions', label: 'Requisitions', icon: ShoppingCart, roles: ['dev', 'noc', 'sales', 'field', 'management', 'cto', 'account'] }
   ];
 
   const visibleTabs = allTabs.filter(tab => tab.roles.includes(role));
@@ -91,6 +96,8 @@ function AppContent() {
       {activeTab === 'hr_payroll' && <HRModule />} {/* ADDED INTERACTIVE COMPONENT ROUTE */}
       {activeTab === 'management' && <ManagementModule />}
       {activeTab === 'cto' && <CTOModule />} {/* ADDED INTERACTIVE COMPONENT ROUTE */}
+      {activeTab === 'fleet' && <FleetModule />}
+      {activeTab === 'requisitions' && <RequisitionsModule />}
     </Layout>
   );
 }

@@ -14,6 +14,8 @@ export function AppProvider({ children }) {
   const [workOrders, setWorkOrders] = useState([]);
   const [requisitions, setRequisitions] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [dailyReports, setDailyReports] = useState([]);
 
   // Decode JWT user session details when the token changes
   useEffect(() => {
@@ -56,12 +58,14 @@ export function AppProvider({ children }) {
     if (!token) return;
 
     try {
-      const [custRes, invRes, woRes, reqRes, empRes] = await Promise.all([
+      const [custRes, invRes, woRes, reqRes, empRes, vehRes, repRes] = await Promise.all([
         authFetch('/api/customers'),
         authFetch('/api/inventory'),
         authFetch('/api/work-orders'),
         authFetch('/api/requisitions'),
-        authFetch('/api/employees')
+        authFetch('/api/employees'),
+        authFetch('/api/vehicles'),         // NEW
+        authFetch('/api/daily-reports')     // NEW
       ]);
 
       if (custRes.ok) setCustomers(await custRes.json());
@@ -69,6 +73,8 @@ export function AppProvider({ children }) {
       if (woRes.ok) setWorkOrders(await woRes.json());
       if (reqRes.ok) setRequisitions(await reqRes.json());
       if (empRes.ok) setEmployees(await empRes.json());
+      if (vehRes.ok) setVehicles(await vehRes.json());
+      if (repRes.ok) setDailyReports(await repRes.json());
     } catch (err) {
       console.error('Failed to synchronize state with server:', err);
     }
@@ -105,10 +111,14 @@ export function AppProvider({ children }) {
       workOrders,
       requisitions,
       employees,
-      loginUser,
-      logoutUser,
+      vehicles,       // Ensure these are included
+      setVehicles,
+      dailyReports,
+      setDailyReports,
       authFetch,
-      refreshData
+      refreshData,
+      loginUser,
+      logoutUser
     }}>
       {children}
     </AppContext.Provider>
