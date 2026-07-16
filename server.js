@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import db from './db.js';
 import jwt from 'jsonwebtoken';
+import http from 'http';
+import { Server } from 'socket.io';
 
 const app = express();
 
@@ -9,13 +11,12 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:5173',
-  'https://voix-erp.vercel.app', // Your Vercel domain
-  process.env.FRONTEND_URL       // Your Render environment variable
+  'https://voix-erp.vercel.app', 
+  process.env.FRONTEND_URL       
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
       var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
@@ -27,6 +28,19 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// --- WEBSOCKET SETUP ---
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    credentials: true
+  }
+});
+
+io.on('connection', (socket) => {
+  console.log('Client connected to real-time sync.');
+});
 
 const SECRET_KEY = 'voix-super-secret-erp-key';
 
@@ -68,6 +82,7 @@ app.post('/api/customers/interaction', authenticateToken, (req, res) => {
   const history = JSON.parse(customer.interactionHistory || '[]');
   history.push(interaction);
   db.prepare("UPDATE customers SET interactionHistory = ? WHERE id = ?").run(JSON.stringify(history), id);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
@@ -75,6 +90,7 @@ app.get('/api/query-tickets', authenticateToken, (req, res) => res.json(db.prepa
 app.post('/api/query-tickets', authenticateToken, (req, res) => {
   const { ticketNo, dateReceived, timeReceived, customerIp, customerName, queryType, location, serviceType, issueDescription, ticketOpenedBy, whatsappSosSent, assignedTo, queryStatus } = req.body;
   db.prepare("INSERT INTO query_tickets (ticketNo, dateReceived, timeReceived, customerIp, customerName, queryType, location, serviceType, issueDescription, ticketOpenedBy, whatsappSosSent, assignedTo, queryStatus, resolutionDateTime, mttr, resolutionBy, customerFeedback, closureNotes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'Pending', '', '', '')").run(ticketNo, dateReceived, timeReceived, customerIp, customerName, queryType, location, serviceType, issueDescription, ticketOpenedBy, whatsappSosSent, assignedTo, queryStatus);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
@@ -82,6 +98,7 @@ app.get('/api/pending-deployments', authenticateToken, (req, res) => res.json(db
 app.post('/api/pending-deployments/:id/activate', authenticateToken, (req, res) => {
   const { assignedIpAddress, opticalReading, oltProfile } = req.body;
   db.prepare("UPDATE pending_deployments SET status = 'Active IP Assigned', assignedIpAddress = ?, opticalReading = ?, oltProfile = ? WHERE id = ?").run(assignedIpAddress, opticalReading, oltProfile, req.params.id);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
@@ -90,11 +107,13 @@ app.get('/api/survey-tickets', authenticateToken, (req, res) => res.json(db.prep
 app.post('/api/survey-tickets', authenticateToken, (req, res) => {
   const { id, customer, location, contactPerson, proposedPlan, marketerName } = req.body;
   db.prepare("INSERT INTO survey_tickets (id, customer, location, contactPerson, proposedPlan, marketerName, status) VALUES (?, ?, ?, ?, ?, ?, 'Pending Survey')").run(id, customer, location, contactPerson, proposedPlan, marketerName);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 app.put('/api/survey-tickets/:id/field-quote', authenticateToken, (req, res) => {
   const { distanceMeters, polesRequired, cableType, technicianNotes, surveyedBy, materialCost, routerCost, installationLabour, totalQuote } = req.body;
   db.prepare("UPDATE survey_tickets SET status = 'Survey Completed (AQ Issued)', distanceMeters = ?, polesRequired = ?, cableType = ?, technicianNotes = ?, surveyedBy = ?, materialCost = ?, routerCost = ?, installationLabour = ?, totalQuote = ? WHERE id = ?").run(distanceMeters, polesRequired, cableType, technicianNotes, surveyedBy, materialCost, routerCost, installationLabour, totalQuote, req.params.id);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 app.put('/api/survey-tickets/:id/invoice', authenticateToken, (req, res) => {
@@ -103,6 +122,7 @@ app.put('/api/survey-tickets/:id/invoice', authenticateToken, (req, res) => {
   const survey = db.prepare("SELECT * FROM survey_tickets WHERE id = ?").get(req.params.id);
   db.prepare("INSERT INTO pending_deployments (id, customer, plan, location, amountPaid, paidDate, status) VALUES (?, ?, ?, ?, ?, ?, 'Awaiting Splicing')").run(`DEP-${Date.now().toString().slice(-3)}`, survey.customer, survey.proposedPlan, survey.location, survey.totalQuote, new Date().toISOString().substring(0, 10));
   db.prepare("INSERT INTO installation_tickets (id, type, customer, package, step, createdAt, assignedTeam, costMaterials, costFuel, revenue, monthlySub, notes) VALUES (?, 'installation', ?, ?, 1, ?, 'Unassigned', ?, 8000, ?, 85000, ?)").run(`INST-${Date.now().toString().slice(-4)}`, survey.customer, survey.proposedPlan, new Date().toISOString().substring(0, 10), survey.materialCost, survey.totalQuote, `Survey Ref: ${survey.id}`);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
@@ -110,6 +130,7 @@ app.put('/api/survey-tickets/:id/invoice', authenticateToken, (req, res) => {
 app.get('/api/installation-tickets', authenticateToken, (req, res) => res.json(db.prepare("SELECT * FROM installation_tickets").all()));
 app.put('/api/installation-tickets/:id/step', authenticateToken, (req, res) => {
   db.prepare("UPDATE installation_tickets SET step = ?, notes = ? WHERE id = ?").run(req.body.step, req.body.notes, req.params.id);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
@@ -119,6 +140,7 @@ app.get('/api/daily-work-plans', authenticateToken, (req, res) => {
 app.post('/api/daily-work-plans', authenticateToken, (req, res) => {
   const { date, objective, selectedTickets, status } = req.body;
   db.prepare("INSERT INTO daily_work_plans (date, objective, selectedTickets, status) VALUES (?, ?, ?, ?)").run(date, objective, JSON.stringify(selectedTickets), status);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
@@ -128,45 +150,52 @@ app.get('/api/work-orders', authenticateToken, (req, res) => {
 app.post('/api/work-orders', authenticateToken, (req, res) => {
   const { id, teamId, ticketId, objective, materialsRequired, status } = req.body;
   db.prepare("INSERT INTO work_orders (id, teamId, ticketId, objective, materialsRequired, status) VALUES (?, ?, ?, ?, ?, ?)").run(id, teamId, ticketId, objective, JSON.stringify(materialsRequired), status);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 app.put('/api/work-orders/:id/status', authenticateToken, (req, res) => {
   db.prepare("UPDATE work_orders SET status = ? WHERE id = ?").run(req.body.status, req.params.id);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
 // --- INVENTORY DEPLETION ALGORITHM ---
 app.get('/api/inventory', authenticateToken, (req, res) => res.json(db.prepare("SELECT * FROM inventory").all()));
 app.post('/api/inventory/checkout', authenticateToken, (req, res) => {
-  const { materials } = req.body; // Expects array: [{ item: "Router", qty: 1 }]
+  const { materials } = req.body; 
   const deduct = db.prepare("UPDATE inventory SET qty = qty - ? WHERE item = ?");
   const transaction = db.transaction((mats) => {
     for (const mat of mats) { deduct.run(mat.qty, mat.item); }
   });
   transaction(materials);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
 // --- REQUISITIONS, DAILY REPORTS, HR ---
 app.get('/api/requisitions', authenticateToken, (req, res) => res.json(db.prepare("SELECT * FROM requisitions").all()));
 app.post('/api/requisitions', authenticateToken, (req, res) => {
-  const { id, dept, item, qty, estCost, reason, status } = req.body;
-  db.prepare("INSERT INTO requisitions (id, dept, item, qty, estCost, reason, status) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, dept, item, qty, estCost, reason, status);
-  res.json({ success: true });
+  const { department, item, quantity, estimatedCost } = req.body;
+  const result = db.prepare("INSERT INTO requisitions (department, item, quantity, estimatedCost, requestedBy) VALUES (?, ?, ?, ?, ?)").run(department, item, quantity, estimatedCost, req.user.username);
+  io.emit('erp-data-changed');
+  res.json({ success: true, id: result.lastInsertRowid });
 });
 app.put('/api/requisitions/:id', authenticateToken, (req, res) => {
   db.prepare("UPDATE requisitions SET status = ? WHERE id = ?").run(req.body.status, req.params.id);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
-app.get('/api/daily-reports', authenticateToken, (req, res) => res.json(db.prepare("SELECT * FROM daily_reports").all()));
+app.get('/api/daily-reports', authenticateToken, (req, res) => res.json(db.prepare("SELECT * FROM daily_reports ORDER BY id DESC").all()));
 app.post('/api/daily-reports', authenticateToken, (req, res) => {
-  const { id, submittedBy, dept, date, summary, highlights } = req.body;
-  db.prepare("INSERT INTO daily_reports (id, submittedBy, dept, date, summary, highlights, status) VALUES (?, ?, ?, ?, ?, ?, 'Pending Review')").run(id, submittedBy, dept, date, summary, highlights);
-  res.json({ success: true });
+  const { crewId, date, splices, locations, highlights } = req.body;
+  const result = db.prepare("INSERT INTO daily_reports (crewId, date, splices, locations, highlights, submittedBy) VALUES (?, ?, ?, ?, ?, ?)").run(crewId, date, splices, locations, highlights, req.user.username);
+  io.emit('erp-data-changed');
+  res.json({ success: true, id: result.lastInsertRowid });
 });
 app.put('/api/daily-reports/:id/review', authenticateToken, (req, res) => {
   db.prepare("UPDATE daily_reports SET status = 'Reviewed' WHERE id = ?").run(req.params.id);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 
@@ -175,6 +204,7 @@ app.put('/api/hr/appraisals/:employeeId', authenticateToken, (req, res) => {
   const { hrScore, hodScore, gmScore } = req.body;
   db.prepare("UPDATE appraisals SET hrScore = ?, hodScore = ?, gmScore = ? WHERE employeeId = ?").run(hrScore, hodScore, gmScore, req.params.employeeId);
   db.prepare("UPDATE employees SET currentScore = ? WHERE id = ?").run(Math.round((hrScore + hodScore + gmScore) / 3), req.params.employeeId);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
 app.put('/api/hr/payroll-adjustments/:employeeId', authenticateToken, (req, res) => {
@@ -183,43 +213,18 @@ app.put('/api/hr/payroll-adjustments/:employeeId', authenticateToken, (req, res)
   const values = fields.map(f => req.body[f] || 0);
   values.push(req.params.employeeId);
   db.prepare(`UPDATE payroll_adjustments SET ${sets} WHERE employeeId = ?`).run(...values);
+  io.emit('erp-data-changed');
   res.json({ success: true });
 });
-// --- VEHICLES / FLEET ---
-app.get('/api/vehicles', authenticateToken, (req, res) => {
-  res.json(db.prepare("SELECT * FROM vehicles").all());
-});
+
+app.get('/api/vehicles', authenticateToken, (req, res) => res.json(db.prepare("SELECT * FROM vehicles").all()));
 app.post('/api/vehicles', authenticateToken, (req, res) => {
   const { plateNumber, model, fuelLevel, lastMaintenance } = req.body;
   const result = db.prepare("INSERT INTO vehicles (plateNumber, model, fuelLevel, lastMaintenance) VALUES (?, ?, ?, ?)").run(plateNumber, model, fuelLevel, lastMaintenance);
+  io.emit('erp-data-changed');
   res.json({ id: result.lastInsertRowid });
 });
 
-// --- DAILY FIELD REPORTS ---
-app.get('/api/daily-reports', authenticateToken, (req, res) => {
-  res.json(db.prepare("SELECT * FROM daily_reports ORDER BY id DESC").all());
-});
-app.post('/api/daily-reports', authenticateToken, (req, res) => {
-  const { crewId, date, splices, locations, highlights } = req.body;
-  const result = db.prepare("INSERT INTO daily_reports (crewId, date, splices, locations, highlights, submittedBy) VALUES (?, ?, ?, ?, ?, ?)").run(crewId, date, splices, locations, highlights, req.user.username);
-  res.json({ success: true, id: result.lastInsertRowid });
-});
-
-// --- REQUISITIONS ---
-app.get('/api/requisitions', authenticateToken, (req, res) => {
-  res.json(db.prepare("SELECT * FROM requisitions ORDER BY id DESC").all());
-});
-app.post('/api/requisitions', authenticateToken, (req, res) => {
-  const { department, item, quantity, estimatedCost } = req.body;
-  const result = db.prepare("INSERT INTO requisitions (department, item, quantity, estimatedCost, requestedBy) VALUES (?, ?, ?, ?, ?)").run(department, item, quantity, estimatedCost, req.user.username);
-  res.json({ success: true, id: result.lastInsertRowid });
-});
-app.put('/api/requisitions/:id', authenticateToken, (req, res) => {
-  db.prepare("UPDATE requisitions SET status = ? WHERE id = ?").run(req.body.status, req.params.id);
-  res.json({ success: true });
-});
-// Change the listen block to this:
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// Update CORS to allow your Vercel deployment dynamically
+// CRITICAL: We use server.listen now, not app.listen
+server.listen(PORT, () => console.log(`Voix ERP Server running with WebSockets on port ${PORT}`));
