@@ -1,36 +1,27 @@
-# Voix ERP
+# Voix ERP Production System
 
-A comprehensive Enterprise Resource Planning system for network operations, featuring integrated CRM, Inventory, Accounting, and Field Crew management.
+Enterprise Resource Planning platform for ISP infrastructure management.
 
-## 🛠 Tech Stack
-- **Frontend**: React, Vite, Tailwind CSS, Lucide React
-- **Backend**: Node.js, Express
-- **Database**: SQLite (via better-sqlite3)
-- **Auth**: JWT-based authentication
+## Stack
+- **Frontend**: React, Vite, Tailwind CSS, Lucide React, Socket.io
+- **Backend**: Node.js, Express, better-sqlite3 (SQLite)
+- **Security**: JWT Authentication, Bcrypt, Middleware-based role access control
 
-## 🚀 Getting Started
+## Architecture
+- `server/`: Express API engine.
+- `client/`: React SPA with context-based state management.
+- `db/`: SQLite instance (`voix_erp_production.db`).
 
-1. **Install Dependencies**:
-   ```bash
-   npm install
+## Setup
+1. **Server**: `cd server && npm install && npm run dev`
+2. **Client**: `cd client && npm install && npm run dev`
 
-Run the Application:
-This project uses concurrently to run the frontend and backend simultaneously.
+## Key Operations
+- **CRM Pipeline**: Sales → Closing → Deployment → Customer Profile.
+- **Field Ops**: Tickets → Team Assignment → Work Orders → Materials Allocation → Completion (Inventory Reconciliation).
+- **Financials**: Requisitions (Cash/Materials) → Manager Review → Accounting Ledger.
 
-Bash
-npm start
-📂 Project Structure
-/src/components/: Modular UI components organized by domain (Accounting, Auth, CRM, NOC).
-
-/src/context/: Global state management (AppContext.jsx).
-
-server.js: API routes and database orchestration.
-
-db.js: Database schema and SQLite connection setup.
-
-🏗 Key Modules
-CRM: Customer profiles, interaction logging, and ticketing.
-
-NOC: Dispatch, work orders, and inventory tracking.
-
-Accounting: Expense requisitions and staff payroll management.
+## Role Matrices
+- **HR/GM**: Full access, staff creation.
+- **Accounting**: Inventory management, requisition approvals.
+- **NOC/Fiber**: Ticket management, field reporting.
