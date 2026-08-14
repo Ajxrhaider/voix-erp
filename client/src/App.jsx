@@ -2,10 +2,25 @@ import React, { useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider, AppContext } from './context/AppContext';
 import MainLayout from './components/layout/MainLayout';
-import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 
-// Protected Route Wrapper
+// The 14 Required Modules
+import Dashboard from './pages/Dashboard';
+import Sales from './pages/Sales';
+import Deployments from './pages/Deployments';
+import Customers from './pages/Customers';
+import CustomerService from './pages/CustomerService';
+import NOC from './pages/NOC';
+import Fiber from './pages/Fiber';
+import WorkOrders from './pages/WorkOrders';
+import Inventory from './pages/Inventory';
+import Requisitions from './pages/Requisitions';
+import Accounting from './pages/Accounting';
+import HR from './pages/HR';
+import Management from './pages/Management';
+import Admin from './pages/Admin';
+
+// Protected Route Wrapper (Keeps your original loading spinner)
 const ProtectedRoute = ({ children }) => {
   const { user, token, loading } = useContext(AppContext);
   
@@ -65,8 +80,21 @@ const AppContent = () => {
             </ProtectedRoute>
           } 
         >
-          {/* Main Views */}
+          {/* Main Module Views */}
           <Route index element={<Dashboard />} />
+          <Route path="sales" element={<Sales />} />
+          <Route path="deployments" element={<Deployments />} />
+          <Route path="customers" element={<Customers />} />
+          <Route path="cs" element={<CustomerService />} />
+          <Route path="noc" element={<NOC />} />
+          <Route path="fiber" element={<Fiber />} />
+          <Route path="work-orders" element={<WorkOrders />} />
+          <Route path="inventory" element={<Inventory />} />
+          <Route path="requisitions" element={<Requisitions />} />
+          <Route path="accounting" element={<Accounting />} />
+          <Route path="hr" element={<HR />} />
+          <Route path="management" element={<Management />} />
+          <Route path="admin" element={<Admin />} />
         </Route>
 
         {/* Fallback Redirect */}

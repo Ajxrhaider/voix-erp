@@ -19,7 +19,7 @@ export function AppProvider({ children }) {
   const [sales, setSales] = useState([]);
   const [deployments, setDeployments] = useState([]);
   const [tickets, setTickets] = useState([]);
-  const [dailyTeams, setDailyTeams] = useState([]);
+  const [teams, setTeams] = useState([]); // Renamed from dailyTeams to match new UI
   const [workOrders, setWorkOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [ledger, setLedger] = useState([]);
@@ -33,9 +33,8 @@ export function AppProvider({ children }) {
     tokenRef.current = token;
   }, [token]);
 
-  // 1. Defined before authFetch using useCallback so it maintains a stable reference
+  // Wipes both current and legacy localStorage keys
   const logout = useCallback(() => {
-    // Wipes both current and legacy localStorage keys
     localStorage.removeItem('voix_token');
     localStorage.removeItem('voix_user');
     localStorage.removeItem('token');
@@ -46,24 +45,33 @@ export function AppProvider({ children }) {
     setUser(null);
   }, []);
 
-  // 2. Stable login handler
+  // Stable login handler
   const login = useCallback((sessionToken, userData) => {
     localStorage.setItem('voix_token', sessionToken);
     localStorage.setItem('voix_user', JSON.stringify(userData));
+    localStorage.setItem('token', sessionToken);
+    localStorage.setItem('user', JSON.stringify(userData));
     
     tokenRef.current = sessionToken;
     setToken(sessionToken);
     setUser(userData);
   }, []);
 
-  // 3. authFetch cleanly incorporates the memoized logout handler
+  // authFetch cleanly incorporates the memoized logout handler & handles File Uploads
   const authFetch = useCallback(async (route, config = {}) => {
     const currentToken = tokenRef.current;
+    
     const headers = {
-      'Content-Type': 'application/json',
       ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {}),
       ...(config.headers || {})
     };
+
+    // Auto-set JSON content type UNLESS we are uploading a file (FormData)
+    if (!(config.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+    } else {
+      delete headers['Content-Type']; // Let browser set boundary automatically for multipart/form-data
+    }
     
     const response = await fetch(`${BACKEND_ENDPOINT}${route}`, { ...config, headers });
     
@@ -92,17 +100,18 @@ export function AppProvider({ children }) {
       }
     };
 
+    // Updated endpoints to match the new modular backend architecture
     await Promise.all([
-      safeFetch('/api/hr/staff', setStaff),
+      safeFetch('/api/auth/staff', setStaff),
       safeFetch('/api/crm/customers', setCustomers),
       safeFetch('/api/sales/pipeline', setSales),
       safeFetch('/api/deployments', setDeployments),
       safeFetch('/api/tickets', setTickets),
-      safeFetch('/api/teams/daily', setDailyTeams),
-      safeFetch('/api/work-orders', setWorkOrders),
+      safeFetch('/api/tickets/work-orders/list', setWorkOrders), // New route
+      safeFetch('/api/teams/daily', setTeams),
       safeFetch('/api/inventory', setInventory),
-      safeFetch('/api/accounting/ledger', setLedger),
-      safeFetch('/api/requisitions', setRequisitions)
+      safeFetch('/api/inventory/requisitions', setRequisitions), // New route
+      safeFetch('/api/accounting/ledger', setLedger)
     ]);
 
     setLoading(false);
@@ -115,7 +124,7 @@ export function AppProvider({ children }) {
     try {
       socket = io(BACKEND_ENDPOINT);
       socket.on('erp-data-changed', () => {
-        refreshSystemData();
+        refreshSystemData(); // Silently updates UI for everyone when data changes
       });
     } catch (e) {
       console.warn("Socket initialization skipped:", e);
@@ -130,7 +139,7 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      token, user, staff, customers, sales, deployments, tickets, dailyTeams,
+      token, user, staff, customers, sales, deployments, tickets, teams,
       workOrders, inventory, ledger, requisitions, loading,
       authFetch, refreshSystemData, login, logout
     }}>
