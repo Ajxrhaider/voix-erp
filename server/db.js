@@ -9,13 +9,11 @@ db.pragma('busy_timeout = 5000');
 db.pragma('foreign_keys = ON');
 
 db.exec(`
-  -- 1. ID Sequences
   CREATE TABLE IF NOT EXISTS id_sequences (
     seq_name TEXT PRIMARY KEY,
     next_val INTEGER NOT NULL
   );
 
-  -- 2. Staff / Users Management
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
@@ -23,13 +21,12 @@ db.exec(`
     fullname TEXT NOT NULL,
     email TEXT UNIQUE,
     phone TEXT,
-    role TEXT CHECK(role IN ('GM', 'HR', 'Management', 'Accounting', 'NOC', 'Fiber', 'Dev', 'Customer Service', 'Sales', 'Inventory')) NOT NULL,
+    roles TEXT DEFAULT '["Sales"]', 
     department TEXT DEFAULT 'General',
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- 3. CRM & Customer Profiles
   CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
     voix_no TEXT UNIQUE,
@@ -46,7 +43,6 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- 4. Sales Pipeline (Bitrix24)
   CREATE TABLE IF NOT EXISTS sales_pipeline (
     id TEXT PRIMARY KEY,
     customer_name TEXT NOT NULL,
@@ -61,7 +57,6 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- 5. Deployments
   CREATE TABLE IF NOT EXISTS deployments (
     id TEXT PRIMARY KEY,
     sale_id TEXT REFERENCES sales_pipeline(id),
@@ -79,7 +74,6 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- 6. Accounting Ledger (Day Book & VAT)
   CREATE TABLE IF NOT EXISTS accounting_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entry_date DATE NOT NULL,
@@ -102,7 +96,6 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- 7. Requisitions Portal
   CREATE TABLE IF NOT EXISTS requisitions (
     id TEXT PRIMARY KEY,
     type TEXT CHECK(type IN ('Cash', 'Materials')) NOT NULL,
@@ -115,7 +108,6 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- 8. Tickets & Technical Work Orders
   CREATE TABLE IF NOT EXISTS tickets (
     id TEXT PRIMARY KEY,
     customer_id TEXT REFERENCES customers(id),
@@ -169,7 +161,6 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- 9. Inventory System
   CREATE TABLE IF NOT EXISTS inventory (
     id TEXT PRIMARY KEY,
     item_name TEXT NOT NULL,
@@ -179,21 +170,41 @@ db.exec(`
     min_alert_qty INTEGER DEFAULT 5,
     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT REFERENCES users(id),
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    type TEXT DEFAULT 'System',
+    is_read INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
+
+// --- AUTOMATED DB MIGRATION: Fix missing 'roles' column safely ---
+try {
+  const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+  const hasRoles = tableInfo.some(col => col.name === 'roles');
+  
+  if (!hasRoles) {
+    db.prepare("ALTER TABLE users ADD COLUMN roles TEXT DEFAULT '[]'").run();
+    db.prepare("UPDATE users SET roles = json_array(role) WHERE role IS NOT NULL").run();
+    console.log("Database Migration Complete: Added 'roles' JSON support.");
+  }
+} catch (err) {
+  console.log("Migration check passed.");
+}
 
 // --- EXPORTED ID GENERATOR ---
 export function generateId(seqName, prefix) {
   const stmt = db.prepare(`
-    UPDATE id_sequences 
-    SET next_val = next_val + 1 
-    WHERE seq_name = ? 
-    RETURNING next_val
+    UPDATE id_sequences SET next_val = next_val + 1 WHERE seq_name = ? RETURNING next_val
   `);
   const result = stmt.get(seqName);
   return `${prefix}-${result.next_val}`;
 }
 
-// Initialization & Admin Seed
 const initializeSequences = db.transaction(() => {
   const tables = ['staff', 'customer', 'sale', 'deployment', 'ticket', 'work_order', 'team', 'inventory', 'requisition', 'report'];
   const insertStmt = db.prepare("INSERT OR IGNORE INTO id_sequences (seq_name, next_val) VALUES (?, 100)");
@@ -204,8 +215,8 @@ initializeSequences();
 const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get().count;
 if (userCount === 0) {
   const hash = bcrypt.hashSync('admin123', 10);
-  db.prepare("INSERT INTO users (id, username, password, role, fullname, email) VALUES (?, ?, ?, ?, ?, ?)")
-    .run('EMP-000', 'admin', hash, 'Management', 'System Administrator', 'admin@voixnetworks.ng');
+  db.prepare("INSERT INTO users (id, username, password, roles, fullname, email) VALUES (?, ?, ?, ?, ?, ?)")
+    .run('EMP-000', 'admin', hash, JSON.stringify(['Management', 'Dev', 'Admin']), 'System Administrator', 'admin@voixnetworks.ng');
 }
 
 export default db;

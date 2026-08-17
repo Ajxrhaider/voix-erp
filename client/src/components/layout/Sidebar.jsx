@@ -6,44 +6,37 @@ export default function Sidebar() {
   const location = useLocation();
   const { user } = useContext(AppContext);
 
-  // Grouped Navigation Array mapping all 14 modules to roles
   const allNavItems = [
     { name: 'Dashboard', path: '/', roles: ['All'] },
     
-    // Commercial
-    { name: 'Sales Pipeline', path: '/sales', roles: ['Sales', 'Management', 'GM'] },
-    { name: 'Deployments', path: '/deployments', roles: ['Sales', 'NOC', 'Fiber', 'Management', 'GM'] },
+    { name: 'Sales Pipeline', path: '/sales', roles: ['Sales', 'Management', 'GM', 'Dev'] },
+    { name: 'Deployments', path: '/deployments', roles: ['Sales', 'NOC', 'Fiber', 'Management', 'GM', 'Dev'] },
     
-    // CRM & Support
-    { name: 'CRM Profiles', path: '/customers', roles: ['Customer Service', 'Management', 'GM', 'Accounting'] },
-    { name: 'Customer Service', path: '/cs', roles: ['Customer Service', 'Management'] },
-    { name: 'NOC Desk', path: '/noc', roles: ['NOC', 'Management', 'GM'] },
+    { name: 'CRM Profiles', path: '/customers', roles: ['Customer Service', 'Management', 'GM', 'Accounting', 'Dev'] },
+    { name: 'Customer Service', path: '/cs', roles: ['Customer Service', 'Management', 'Dev'] },
+    { name: 'NOC Desk', path: '/noc', roles: ['NOC', 'HOD NOC', 'Management', 'GM', 'Dev'] },
     
-    // Field Ops
-    { name: 'Fiber Teams', path: '/fiber', roles: ['Fiber', 'NOC', 'Management', 'GM'] },
-    { name: 'Work Orders', path: '/work-orders', roles: ['Fiber', 'NOC', 'Customer Service', 'Management'] },
+    { name: 'Fiber Teams', path: '/fiber', roles: ['Fiber', 'HOD Fiber', 'NOC', 'Management', 'GM', 'Dev'] },
+    { name: 'Work Orders', path: '/work-orders', roles: ['Fiber', 'HOD Fiber', 'NOC', 'Customer Service', 'Management', 'Dev'] },
     
-    // Finance & Assets
-    { name: 'Inventory', path: '/inventory', roles: ['Inventory', 'Accounting', 'Management', 'GM'] },
-    { name: 'Requisitions', path: '/requisitions', roles: ['All'] }, // Everyone can request
-    { name: 'Accounting', path: '/accounting', roles: ['Accounting', 'Management', 'GM'] },
+    { name: 'Inventory', path: '/inventory', roles: ['Inventory', 'Accounting', 'Management', 'GM', 'Dev'] },
+    { name: 'Requisitions', path: '/requisitions', roles: ['All'] },
+    { name: 'Accounting', path: '/accounting', roles: ['Accounting', 'Management', 'GM', 'Dev'] },
     
-    // Administration
-    { name: 'HR Directory', path: '/hr', roles: ['HR', 'Management', 'GM'] },
-    { name: 'Management', path: '/management', roles: ['Management', 'GM'] },
+    { name: 'HR Directory', path: '/hr', roles: ['HR', 'Management', 'GM', 'Dev'] },
+    { name: 'Management', path: '/management', roles: ['Management', 'GM', 'Dev'] },
     { name: 'IT Admin', path: '/admin', roles: ['Dev', 'Management'] },
   ];
 
-  // Filter links based on user role (Management/GM sees almost everything)
+  // Safely check array intersections using user.roles?.some()
   const allowedLinks = allNavItems.filter(item => 
     item.roles.includes('All') || 
-    (user && item.roles.includes(user.role)) || 
-    (user && user.role === 'Management')
+    (user && user.roles?.some(r => item.roles.includes(r))) || 
+    (user && (user.roles?.includes('Management') || user.roles?.includes('GM') || user.roles?.includes('Dev')))
   );
 
   return (
     <aside className="w-64 bg-slate-950 border-r border-slate-800 min-h-screen flex flex-col hidden md:flex">
-      {/* BRANDING HEADER */}
       <div className="h-16 flex items-center px-6 border-b border-slate-800">
         <Link to="/" className="flex items-center gap-3 group">
           <div className="w-8 h-8 bg-voix-600 rounded-lg flex items-center justify-center p-1 shadow-md shadow-voix-600/20 group-hover:bg-voix-500 transition-colors">
@@ -55,7 +48,6 @@ export default function Sidebar() {
         </Link>
       </div>
 
-      {/* NAVIGATION LINKS */}
       <nav className="flex-1 py-6 px-3 flex flex-col gap-1 overflow-y-auto custom-scrollbar">
         {allowedLinks.map((item) => {
           const isActive = location.pathname === item.path;
@@ -75,9 +67,8 @@ export default function Sidebar() {
         })}
       </nav>
       
-      {/* Footer Branding */}
       <div className="p-4 border-t border-slate-800 text-center text-xs text-slate-500 font-mono">
-        Voix Networks v2.0
+        Voix Networks v2.1
       </div>
     </aside>
   );
