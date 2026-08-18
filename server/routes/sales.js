@@ -4,59 +4,50 @@ import { authenticateToken } from './auth.js';
 
 const router = express.Router();
 
-// GET /api/sales/pipeline
 router.get('/pipeline', authenticateToken, (req, res) => {
-  const deals = db.prepare(`SELECT * FROM sales_pipeline ORDER BY created_at DESC`).all();
-  res.json(deals);
+  res.json(db.prepare(`SELECT * FROM sales_pipeline ORDER BY created_at DESC`).all());
 });
 
-// POST /api/sales/pipeline (Input Sale & Survey)
 router.post('/pipeline', authenticateToken, (req, res) => {
   const { customer_name, contact_email, contact_phone, location, survey_details, proposed_plan, amount, stage } = req.body;
-  if (!customer_name || !location || !amount) {
-    return res.status(400).json({ message: 'Customer name, location, and proposed deal amount required' });
-  }
-
+  
   const saleId = generateId('sale', 'SALE');
-  const stmt = db.prepare(`
+  db.prepare(`
     INSERT INTO sales_pipeline (id, customer_name, contact_email, contact_phone, location, survey_details, proposed_plan, amount, stage, sales_rep_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  `).run(saleId, customer_name, contact_email || '', contact_phone || '', location, survey_details || 'Optical survey pending', proposed_plan, parseFloat(amount), stage || 'Lead', req.user.id);
 
-  stmt.run(
-    saleId, customer_name, contact_email || '', contact_phone || '',
-    location, survey_details || 'Optical survey pending',
-    proposed_plan || '50Mbps FTTH Plan',
-    parseFloat(amount), stage || 'Lead', req.user.id
-  );
-
-  // AUTOMATED FLOW: If created directly in "Closing/Won", trigger deployment instantly
   if (stage === 'Closing/Won') {
     createDeploymentFromSale(saleId, customer_name, contact_phone, location, proposed_plan, amount);
   }
 
-  res.status(201).json({ id: saleId, message: 'Sales opportunity entered into pipeline' });
+  req.io.emit('erp-data-changed');
+  res.status(201).json({ id: saleId });
 });
 
-// PATCH /api/sales/pipeline/:id/stage (Stage advancement in Bitrix24 style)
 router.patch('/pipeline/:id/stage', authenticateToken, (req, res) => {
   const { stage } = req.body;
-  const { id } = req.params;
-
-  const sale = db.prepare(`SELECT * FROM sales_pipeline WHERE id = ?`).get(id);
+  const sale = db.prepare(`SELECT * FROM sales_pipeline WHERE id = ?`).get(req.params.id);
   if (!sale) return res.status(404).json({ message: 'Deal not found' });
 
-  db.prepare(`UPDATE sales_pipeline SET stage = ? WHERE id = ?`).run(stage, id);
+  db.prepare(`UPDATE sales_pipeline SET stage = ? WHERE id = ?`).run(stage, req.params.id);
 
-  // AUTOMATED FLOW: Sale reaches "Closing/Won" -> automatically create Deployment
+  // AUTOMATED FLOW: Closing/Won -> Create Deployment & Notify HODs
   if (stage === 'Closing/Won') {
-    const existingDep = db.prepare(`SELECT id FROM deployments WHERE sale_id = ?`).get(id);
+    const existingDep = db.prepare(`SELECT id FROM deployments WHERE sale_id = ?`).get(req.params.id);
     if (!existingDep) {
       createDeploymentFromSale(sale.id, sale.customer_name, sale.contact_phone, sale.location, sale.proposed_plan, sale.amount);
+      
+      const hods = db.prepare(`SELECT id FROM users WHERE roles LIKE '%"HOD Fiber"%'`).all();
+      hods.forEach(hod => {
+        db.prepare(`INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, 'Deployment')`)
+          .run(hod.id, 'New Deployment Auto-Queued', `Deal closed for ${sale.customer_name}. Provisioning required.`);
+      });
     }
   }
 
-  res.json({ message: `Deal stage advanced to ${stage}` });
+  req.io.emit('erp-data-changed');
+  res.json({ message: `Deal advanced to ${stage}` });
 });
 
 function createDeploymentFromSale(saleId, name, phone, location, plan, amount) {

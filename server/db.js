@@ -21,7 +21,7 @@ db.exec(`
     fullname TEXT NOT NULL,
     email TEXT UNIQUE,
     phone TEXT,
-    roles TEXT DEFAULT '["Sales"]', 
+    roles TEXT DEFAULT '[]', 
     department TEXT DEFAULT 'General',
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -182,27 +182,19 @@ db.exec(`
   );
 `);
 
-// --- AUTOMATED DB MIGRATION: Fix missing 'roles' column safely ---
+// --- AUTOMATED DB MIGRATION ---
 try {
   const tableInfo = db.prepare("PRAGMA table_info(users)").all();
   const hasRoles = tableInfo.some(col => col.name === 'roles');
-  
   if (!hasRoles) {
     db.prepare("ALTER TABLE users ADD COLUMN roles TEXT DEFAULT '[]'").run();
     db.prepare("UPDATE users SET roles = json_array(role) WHERE role IS NOT NULL").run();
-    console.log("Database Migration Complete: Added 'roles' JSON support.");
   }
-} catch (err) {
-  console.log("Migration check passed.");
-}
+} catch (err) {}
 
-// --- EXPORTED ID GENERATOR ---
 export function generateId(seqName, prefix) {
-  const stmt = db.prepare(`
-    UPDATE id_sequences SET next_val = next_val + 1 WHERE seq_name = ? RETURNING next_val
-  `);
-  const result = stmt.get(seqName);
-  return `${prefix}-${result.next_val}`;
+  const stmt = db.prepare(`UPDATE id_sequences SET next_val = next_val + 1 WHERE seq_name = ? RETURNING next_val`);
+  return `${prefix}-${stmt.get(seqName).next_val}`;
 }
 
 const initializeSequences = db.transaction(() => {

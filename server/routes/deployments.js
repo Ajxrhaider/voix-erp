@@ -1,44 +1,35 @@
 import express from 'express';
 import db, { generateId } from '../db.js';
-import { authenticateToken } from './auth.js';
+import { authenticateToken, requireRoles } from './auth.js';
 
 const router = express.Router();
 
-// GET /api/deployments
 router.get('/', authenticateToken, (req, res) => {
-  const deployments = db.prepare(`SELECT * FROM deployments ORDER BY created_at DESC`).all();
-  res.json(deployments);
+  res.json(db.prepare(`SELECT * FROM deployments ORDER BY created_at DESC`).all());
 });
 
-// POST /api/deployments (Manual Deployment creation allowed)
 router.post('/', authenticateToken, (req, res) => {
   const { customer_name, customer_type, phone, location, plan, amount } = req.body;
-  if (!customer_name || !location) return res.status(400).json({ message: 'Customer name and installation address required' });
-
   const depId = generateId('deployment', 'DEP');
+  
   db.prepare(`
     INSERT INTO deployments (id, customer_name, customer_type, phone, location, plan, amount, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'Awaiting Splicing')
-  `).run(depId, customer_name, customer_type || 'FTTH', phone || '', location, plan || '50Mbps Standard', parseFloat(amount) || 0);
+  `).run(depId, customer_name, customer_type || 'FTTH', phone || '', location, plan, parseFloat(amount) || 0);
 
-  res.status(201).json({ id: depId, message: 'Deployment initialized' });
+  req.io.emit('erp-data-changed');
+  res.status(201).json({ id: depId });
 });
 
-// PATCH /api/deployments/:id/resolve (Resolve/Complete deployment -> Auto Customer Profile)
-router.patch('/:id/resolve', authenticateToken, (req, res) => {
-  const { id } = req.params;
+router.patch('/:id/resolve', authenticateToken, requireRoles(['HOD NOC', 'NOC', 'HOD Fiber', 'Fiber', 'Management', 'GM', 'Dev']), (req, res) => {
   const { fat_box, splitter_port, onu_mac, assigned_ip } = req.body;
-
-  const dep = db.prepare(`SELECT * FROM deployments WHERE id = ?`).get(id);
+  const dep = db.prepare(`SELECT * FROM deployments WHERE id = ?`).get(req.params.id);
   if (!dep) return res.status(404).json({ message: 'Deployment not found' });
 
-  db.prepare(`
-    UPDATE deployments 
-    SET status = 'Completed', fat_box = ?, splitter_port = ?, onu_mac = ?, assigned_ip = ? 
-    WHERE id = ?
-  `).run(fat_box || 'FAT-01', splitter_port || 'Port 4', onu_mac || '00:1A:2B:3C:4D:5E', assigned_ip || '192.168.100.25', id);
+  db.prepare(`UPDATE deployments SET status = 'Completed', fat_box = ?, splitter_port = ?, onu_mac = ?, assigned_ip = ? WHERE id = ?`)
+    .run(fat_box || 'FAT-01', splitter_port || 'Port 4', onu_mac || '', assigned_ip || '', dep.id);
 
-  // AUTOMATED FLOW: Finished deployment creates or updates Customer Profile
+  // AUTOMATED FLOW: Finished deployment creates Customer Profile
   const existingCust = db.prepare(`SELECT id FROM customers WHERE name = ?`).get(dep.customer_name);
   if (!existingCust) {
     const custId = generateId('customer', 'CUST');
@@ -47,10 +38,10 @@ router.patch('/:id/resolve', authenticateToken, (req, res) => {
     db.prepare(`
       INSERT INTO customers (id, voix_no, name, customer_type, phone, address, mac_address, service_plan, ip_address, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
-    `).run(custId, voixNo, dep.customer_name, dep.customer_type, dep.phone, dep.location, onu_mac || '00:1A:2B:3C:4D:5E', dep.plan, assigned_ip || '192.168.100.25');
+    `).run(custId, voixNo, dep.customer_name, dep.customer_type, dep.phone || '', dep.location, onu_mac || '', dep.plan, assigned_ip || '');
   }
 
-  // AUTOMATED FLOW: Record installation fee in Accounting Income if amount > 0
+  // AUTOMATED FLOW: Record installation fee in Accounting Income
   if (dep.amount > 0) {
     const invNo = `INV-DEP-${Date.now().toString().slice(-4)}`;
     const today = new Date().toISOString().split('T')[0];
@@ -66,6 +57,7 @@ router.patch('/:id/resolve', authenticateToken, (req, res) => {
     `).run(today, invNo, dep.customer_name, dep.customer_type, `Fiber Installation for ${dep.location}`, dep.amount, vat, net, dep.id);
   }
 
+  req.io.emit('erp-data-changed');
   res.json({ message: 'Deployment completed and customer profile automatically active.' });
 });
 
