@@ -26,10 +26,27 @@ router.post('/daily', authenticateToken, (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, 1)
   `).run(teamId, name, leader_id, JSON.stringify(member_ids), assigned_vehicle || 'Hilux Field Unit 1', today);
 
+  req.io.emit('erp-data-changed');
   res.status(201).json({ id: teamId, message: 'Daily field team mobilized' });
 });
 
-// POST /api/teams/fiber-report (Daily Fiber Restoration & Splicing Report matching .docx structure)
+// PATCH /api/teams/daily/:id (TEAM SPLITTING / MID-DAY RESTRUCTURING)
+router.patch('/daily/:id', authenticateToken, (req, res) => {
+  const { member_ids, leader_id } = req.body;
+  
+  if (leader_id) {
+    db.prepare(`UPDATE daily_teams SET leader_id = ?, member_ids = ? WHERE id = ?`)
+      .run(leader_id, JSON.stringify(member_ids || []), req.params.id);
+  } else {
+    db.prepare(`UPDATE daily_teams SET member_ids = ? WHERE id = ?`)
+      .run(JSON.stringify(member_ids || []), req.params.id);
+  }
+
+  req.io.emit('erp-data-changed');
+  res.json({ message: 'Team restructured successfully' });
+});
+
+// POST /api/teams/fiber-report (Daily Fiber Restoration & Splicing Report)
 router.post('/fiber-report', authenticateToken, (req, res) => {
   const {
     work_order_id, time_arrived, ticket_no, splicer_name,
@@ -58,6 +75,7 @@ router.post('/fiber-report', authenticateToken, (req, res) => {
     JSON.stringify(leftover_materials || [])
   );
 
+  req.io.emit('erp-data-changed');
   res.status(201).json({ id: reportId, message: 'Fiber restoration and splicing report submitted successfully' });
 });
 

@@ -4,7 +4,7 @@ import ModuleLayout from '../components/layout/ModuleLayout';
 import { PackageSearch, Plus } from 'lucide-react';
 
 export default function Inventory() {
-  const { inventory, authFetch, refreshSystemData, user } = useContext(AppContext);
+  const { inventory, authFetch, refreshSystemData, hasRole } = useContext(AppContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({ item_name: '', category: 'Active Equipment', qty: '', unit_cost: '', min_alert_qty: 5 });
 
@@ -18,12 +18,12 @@ export default function Inventory() {
   return (
     <ModuleLayout
       title="Master Inventory"
-      subtitle="Stock control & Cost tracking"
+      subtitle="Stock control & Operations"
       icon={<PackageSearch className="w-6 h-6" />}
       headerActions={
-        ['Accounting', 'Management'].includes(user?.role) && (
+        hasRole(['Accounting']) && (
           <button onClick={() => setIsModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
-            <Plus className="w-4 h-4"/> Add Stock (Expense)
+            <Plus className="w-4 h-4"/> Add Stock (Auto-Expense)
           </button>
         )
       }
@@ -63,19 +63,19 @@ export default function Inventory() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <h3 className="font-bold text-lg mb-2">Procure New Stock</h3>
-            <p className="text-xs text-amber-600 font-bold mb-4">Warning: This action automatically posts the total cost to the Accounting Expense Ledger.</p>
+            <p className="text-xs text-amber-600 font-bold mb-4">Strict Rule: You are authorized as Accounting. This action automatically posts the total cost to the Accounting Expense Ledger.</p>
             <form onSubmit={handleAddItem} className="space-y-3">
-              <input type="text" required placeholder="Item Name" onChange={e => setFormData({...formData, item_name: e.target.value})} className="w-full border p-2 rounded text-sm" />
-              <select onChange={e => setFormData({...formData, category: e.target.value})} className="w-full border p-2 rounded text-sm bg-white">
+              <input type="text" required placeholder="Item Name" onChange={e => setFormData({...formData, item_name: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
+              <select onChange={e => setFormData({...formData, category: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50">
                 <option>Active Equipment</option><option>Passive Fiber</option><option>Drop Cable</option><option>Accessories</option>
               </select>
               <div className="grid grid-cols-2 gap-3">
-                <input type="number" required placeholder="Quantity" onChange={e => setFormData({...formData, qty: e.target.value})} className="w-full border p-2 rounded text-sm" />
-                <input type="number" required placeholder="Cost per Unit (₦)" onChange={e => setFormData({...formData, unit_cost: e.target.value})} className="w-full border p-2 rounded text-sm" />
+                <input type="number" required placeholder="Quantity" onChange={e => setFormData({...formData, qty: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
+                <input type="number" required placeholder="Cost per Unit (₦)" onChange={e => setFormData({...formData, unit_cost: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
               </div>
               <div className="flex justify-end gap-2 pt-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border rounded">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded font-bold">Add & Post Expense</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold">Add & Post Expense</button>
               </div>
             </form>
           </div>
