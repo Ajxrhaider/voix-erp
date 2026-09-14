@@ -4,7 +4,7 @@ import { authenticateToken } from './auth.js';
 
 const router = express.Router();
 
-// GET /api/teams/daily (Teams expire daily)
+// GET /api/teams/daily
 router.get('/daily', authenticateToken, (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const teams = db.prepare(`SELECT * FROM daily_teams WHERE created_date = ? AND is_active = 1`).all(today);

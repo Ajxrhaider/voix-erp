@@ -9,7 +9,6 @@ router.get('/', authenticateToken, (req, res) => {
   res.json(db.prepare(`SELECT * FROM inventory ORDER BY item_name ASC`).all());
 });
 
-// STRICT INVENTORY CONTROL: ONLY 'Accounting' can add items. Not even GM can bypass this directly without the role.
 router.post('/', authenticateToken, requireRoles(['Accounting']), (req, res) => {
   const { item_name, category, qty, unit_cost, min_alert_qty } = req.body;
   const itemId = generateId('inventory', 'INV');
@@ -21,10 +20,8 @@ router.post('/', authenticateToken, requireRoles(['Accounting']), (req, res) => 
   const today = new Date().toISOString().split('T')[0];
   const invNo = `EXP-INV-${Date.now().toString().slice(-4)}`;
 
-  db.prepare(`
-    INSERT INTO accounting_ledger (entry_date, inv_no, type, category, description, gross_amount, net_amount, is_vat_exempt, received_by, reference_id) 
-    VALUES (?, ?, 'Expense', 'Inventory Stock Procurement', ?, ?, ?, 1, ?, ?)
-  `).run(today, invNo, `Procured ${qty} units of ${item_name}`, totalCost, totalCost, req.user.fullname, itemId);
+  db.prepare(`INSERT INTO accounting_ledger (entry_date, inv_no, type, category, description, gross_amount, net_amount, is_vat_exempt, received_by, reference_id) VALUES (?, ?, 'Expense', 'Inventory Stock Procurement', ?, ?, ?, 1, ?, ?)`)
+    .run(today, invNo, `Procured ${qty} units of ${item_name}`, totalCost, totalCost, req.user.fullname, itemId);
 
   req.io.emit('erp-data-changed');
   res.status(201).json({ id: itemId });
@@ -35,20 +32,29 @@ router.get('/requisitions', authenticateToken, (req, res) => {
 });
 
 router.post('/requisitions', authenticateToken, (req, res) => {
-  const { type, purpose, amount, materials_list } = req.body;
+  const { type, purpose, amount, materials_list, work_order_id } = req.body;
   const reqId = generateId('requisition', 'REQ');
   const user = db.prepare(`SELECT department FROM users WHERE id = ?`).get(req.user.id);
 
-  db.prepare(`
-    INSERT INTO requisitions (id, type, requested_by, department, purpose, amount, materials_list, approval_stage)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending Accounting')
-  `).run(reqId, type, req.user.id, user?.department || 'General', purpose, parseFloat(amount) || 0, JSON.stringify(materials_list || '[]'));
+  db.prepare(`INSERT INTO requisitions (id, type, requested_by, department, purpose, amount, materials_list, approval_stage, work_order_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending Accounting', ?)`)
+    .run(reqId, type, req.user.id, user?.department || 'General', purpose, parseFloat(amount) || 0, JSON.stringify(materials_list || []), work_order_id || null);
 
   req.io.emit('erp-data-changed');
   res.status(201).json({ id: reqId });
 });
 
-// FULL MULTI-LEVEL REQUISITION APPROVAL
+// Requisition Rejection Route
+router.patch('/requisitions/:id/reject', authenticateToken, (req, res) => {
+  db.prepare(`UPDATE requisitions SET approval_stage = 'Rejected' WHERE id = ?`).run(req.params.id);
+  const reqRecord = db.prepare(`SELECT * FROM requisitions WHERE id = ?`).get(req.params.id);
+  const requester = db.prepare(`SELECT email FROM users WHERE id = ?`).get(reqRecord.requested_by);
+  
+  if (requester?.email) sendEmail(requester.email, 'Requisition Rejected', `Your requisition ${req.params.id} has been formally rejected by management or accounting.`);
+  
+  req.io.emit('erp-data-changed');
+  res.json({ message: 'Requisition Rejected' });
+});
+
 router.patch('/requisitions/:id/approve', authenticateToken, (req, res) => {
   const reqRecord = db.prepare(`SELECT * FROM requisitions WHERE id = ?`).get(req.params.id);
   if (!reqRecord) return res.status(404).json({ message: 'Requisition not found' });
@@ -72,35 +78,43 @@ router.patch('/requisitions/:id/approve', authenticateToken, (req, res) => {
   if (reqRecord.approval_stage === 'Pending GM' && (isGodMode || userRoles.includes('GM'))) {
     if (reqRecord.type === 'Cash') {
       db.prepare(`UPDATE requisitions SET approval_stage = 'Completed' WHERE id = ?`).run(reqRecord.id);
-      
-      // Auto Expense Entry
       const today = new Date().toISOString().split('T')[0];
       const invNo = `EXP-CASH-${Date.now().toString().slice(-4)}`;
-      db.prepare(`
-        INSERT INTO accounting_ledger (entry_date, inv_no, type, category, description, gross_amount, net_amount, is_vat_exempt, received_by, reference_id) 
-        VALUES (?, ?, 'Expense', 'Approved Cash Requisition', ?, ?, ?, 1, ?, ?)
-      `).run(today, invNo, `${reqRecord.purpose} (${reqRecord.department})`, reqRecord.amount, reqRecord.amount, req.user.fullname, reqRecord.id);
+      db.prepare(`INSERT INTO accounting_ledger (entry_date, inv_no, type, category, description, gross_amount, net_amount, is_vat_exempt, received_by, reference_id) VALUES (?, ?, 'Expense', 'Approved Cash Requisition', ?, ?, ?, 1, ?, ?)`)
+        .run(today, invNo, `${reqRecord.purpose} (${reqRecord.department})`, reqRecord.amount, reqRecord.amount, req.user.fullname, reqRecord.id);
       
-      if (requester?.email) sendEmail(requester.email, 'Requisition Approved', `Your Cash Requisition ${reqRecord.id} has been fully approved.`);
+      // EMAIL: Final Cash Approval
+      if (requester?.email) sendEmail(requester.email, 'Requisition Approved', `Your Cash Requisition ${reqRecord.id} has been fully approved by GM.`);
     } else {
       db.prepare(`UPDATE requisitions SET approval_stage = 'Pending Inventory' WHERE id = ?`).run(reqRecord.id);
-      if (requester?.email) sendEmail(requester.email, 'Requisition Approved', `Your Materials Requisition ${reqRecord.id} is approved and pending Inventory issuance.`);
+      if (requester?.email) sendEmail(requester.email, 'Requisition Approved', `Your Materials Requisition ${reqRecord.id} has been approved by GM and is pending Inventory issuance.`);
     }
-    
     req.io.emit('erp-data-changed');
     return res.json({ message: 'GM Approved.' });
   }
 
-  // Inventory Material Issuance
   if (reqRecord.approval_stage === 'Pending Inventory' && (isGodMode || userRoles.includes('Inventory'))) {
     db.prepare(`UPDATE requisitions SET approval_stage = 'Completed' WHERE id = ?`).run(reqRecord.id);
     const materials = JSON.parse(reqRecord.materials_list || '[]');
+    
     for (const item of materials) {
       db.prepare(`UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ?`).run(item.qty, item.itemId);
     }
-    if (requester?.email) sendEmail(requester.email, 'Materials Issued', `Your materials for ${reqRecord.id} have been issued by Inventory.`);
+
+    if (reqRecord.work_order_id) {
+      const wo = db.prepare(`SELECT assigned_materials, team_id FROM work_orders WHERE id = ?`).get(reqRecord.work_order_id);
+      if (wo) {
+        let currentAssigned = JSON.parse(wo.assigned_materials || '[]');
+        materials.forEach(m => currentAssigned.push(m));
+        db.prepare(`UPDATE work_orders SET assigned_materials = ? WHERE id = ?`).run(JSON.stringify(currentAssigned), reqRecord.work_order_id);
+      }
+    }
+
+    // EMAIL: Materials Issued Notification
+    if (requester?.email) sendEmail(requester.email, 'Materials Issued', `Inventory has officially issued the materials for Requisition ${reqRecord.id}.`);
+    
     req.io.emit('erp-data-changed');
-    return res.json({ message: 'Materials Issued & Completed.' });
+    return res.json({ message: 'Materials Issued & Work Order Updated.' });
   }
 
   res.status(403).json({ message: 'Unauthorized for this approval stage.' });

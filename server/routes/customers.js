@@ -1,57 +1,45 @@
 import express from 'express';
-import multer from 'multer';
-import * as XLSX from 'xlsx';
 import db, { generateId } from '../db.js';
 import { authenticateToken } from './auth.js';
+import multer from 'multer';
+import * as XLSX from 'xlsx';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// GET /api/crm/customers (List all customers)
-router.get('/customers', authenticateToken, (req, res) => {
-  const customers = db.prepare(`SELECT * FROM customers ORDER BY name ASC`).all();
-  res.json(customers);
+router.get('/', authenticateToken, (req, res) => {
+  res.json(db.prepare(`SELECT * FROM customers ORDER BY name ASC`).all());
 });
 
-// GET /api/crm/customers/:id (Rich Customer Profile)
-router.get('/customers/:id', authenticateToken, (req, res) => {
-  const { id } = req.params;
-  const customer = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(id);
-  if (!customer) return res.status(404).json({ message: 'Customer not found' });
-
-  const payments = db.prepare(`SELECT * FROM accounting_ledger WHERE reference_id = ? OR customer_name = ? ORDER BY entry_date DESC`).all(id, customer.name);
-  const tickets = db.prepare(`SELECT * FROM tickets WHERE customer_id = ? OR customer_name = ? ORDER BY created_at DESC`).all(id, customer.name);
-  const deployments = db.prepare(`SELECT * FROM deployments WHERE customer_name = ? ORDER BY created_at DESC`).all(customer.name);
-
-  res.json({
-    ...customer,
-    payments,
-    tickets,
-    deployments
-  });
-});
-
-// POST /api/crm/customers (Manual Creation)
-router.post('/customers', authenticateToken, (req, res) => {
-  const { name, customer_type, email, phone, address, mac_address, service_plan, ip_address } = req.body;
-  if (!name) return res.status(400).json({ message: 'Customer name is mandatory' });
-
+// Fully detailed Manual Customer Creation Endpoint
+router.post('/', authenticateToken, (req, res) => {
+  const {
+    voix_no, name, mac_address, customer_type, payment_schedule, amount_payable,
+    amount_paid, bank_received, last_payment_date, next_due_date, outstanding_balance,
+    address, email, phone
+  } = req.body;
+  
   const custId = generateId('customer', 'CUST');
-  const voixNo = `VX-${Math.floor(100000 + Math.random() * 900000)}`;
+  const vNo = voix_no || `VX-${Math.floor(100000 + Math.random() * 900000)}`;
 
-  const stmt = db.prepare(`
-    INSERT INTO customers (id, voix_no, name, customer_type, email, phone, address, mac_address, service_plan, ip_address)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  db.prepare(`
+    INSERT INTO customers (
+      id, voix_no, name, mac_address, customer_type, payment_schedule, amount_payable,
+      amount_paid, bank_received, last_payment_date, next_due_date, outstanding_balance,
+      address, email, phone, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
+  `).run(
+    custId, vNo, name, mac_address||'', customer_type||'FTTH', payment_schedule||'Monthly',
+    parseFloat(amount_payable)||0, parseFloat(amount_paid)||0, bank_received||'',
+    last_payment_date||null, next_due_date||null, parseFloat(outstanding_balance)||0,
+    address||'', email||'', phone||''
+  );
 
-  stmt.run(custId, voixNo, name, customer_type || 'FTTH', email || '', phone || '', address || '', mac_address || '', service_plan || '50Mbps Standard', ip_address || 'Unassigned');
-
-  const created = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(custId);
-  res.status(201).json(created);
+  req.io.emit('erp-data-changed');
+  res.status(201).json({ id: custId });
 });
 
-// POST /api/crm/customers/import (Excel/CSV Bulk Importer supporting Profiles.xlsx & Client List)
-router.post('/customers/import', authenticateToken, upload.single('file'), (req, res) => {
+router.post('/bulk-import', authenticateToken, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Excel or CSV file required' });
 
   try {
@@ -61,8 +49,8 @@ router.post('/customers/import', authenticateToken, upload.single('file'), (req,
 
     let importedCount = 0;
     const insertStmt = db.prepare(`
-      INSERT INTO customers (id, voix_no, name, customer_type, email, phone, address, mac_address, service_plan, ip_address, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO customers (id, voix_no, name, customer_type, address, phone, email, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'Active')
     `);
 
     const insertMany = db.transaction((rows) => {
@@ -74,71 +62,40 @@ router.post('/customers/import', authenticateToken, upload.single('file'), (req,
         const email = row['Email'] || row['EMAIL ADDRESS'] || '';
         const phone = row['Phone'] || row['PHONE NUMBER'] || '';
         const address = row['Address'] || row['LOCATION'] || '';
-        const mac = row['MAC'] || row['MAC ADDRESS'] || row['ONU MAC'] || '';
-        const plan = row['Plan'] || row['SERVICE PLAN'] || row['Package'] || '50Mbps Unlimited';
-        const ip = row['IP'] || row['IP ADDRESS'] || 'Unassigned';
 
-        insertStmt.run(custId, voixNo, name, type, email, phone, address, mac, plan, ip, 'Active');
+        insertStmt.run(custId, voixNo, name, type, address, phone, email);
         importedCount++;
       }
     });
 
     insertMany(rawData);
+    req.io.emit('erp-data-changed');
     res.json({ message: `Successfully imported ${importedCount} customer profiles from spreadsheet.` });
   } catch (err) {
     res.status(500).json({ message: `Import error: ${err.message}` });
   }
 });
 
-// POST /api/crm/customers/:id/pay (Record Subscription / One-time Payment -> Auto Income Day Book)
-router.post('/customers/:id/pay', authenticateToken, (req, res) => {
-  const { id } = req.params;
-  const { amount, category, description, durationMonths, isVatExempt, paymentMode } = req.body;
+router.post('/:id/pay', authenticateToken, (req, res) => {
+  const { amount, description } = req.body;
+  const cust = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(req.params.id);
+  
+  // Update Customer's Financial Tracking arrays
+  db.prepare(`UPDATE customers SET amount_paid = amount_paid + ?, outstanding_balance = MAX(0, outstanding_balance - ?) WHERE id = ?`).run(amount, amount, cust.id);
 
-  const customer = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(id);
-  if (!customer) return res.status(404).json({ message: 'Customer record not found' });
-
-  const gross = parseFloat(amount) || 0;
-  if (gross <= 0) return res.status(400).json({ message: 'Valid payment amount required' });
-
-  // 7.5% VAT Engine
-  let vatAmount = 0;
-  let netAmount = gross;
-  if (!isVatExempt) {
-    netAmount = gross / 1.075;
-    vatAmount = gross - netAmount;
-  }
-
-  // Calculate Next Due Date
-  let nextDueDate = '-';
-  const months = parseInt(durationMonths) || 0;
-  if (months > 0) {
-    const d = new Date();
-    d.setMonth(d.getMonth() + months);
-    nextDueDate = d.toISOString().split('T')[0];
-  }
-
-  const invNo = `INV-VN-2026-${Date.now().toString().slice(-4)}`;
+  // Auto Income
+  const invNo = `INV-SUB-${Date.now().toString().slice(-4)}`;
+  const net = amount / 1.075;
+  const vat = amount - net;
   const today = new Date().toISOString().split('T')[0];
 
-  const stmt = db.prepare(`
-    INSERT INTO accounting_ledger (
-      entry_date, inv_no, customer_name, customer_type, type, category, description,
-      gross_amount, is_vat_exempt, vat_rate, vat_amount, net_amount, payment_mode,
-      duration_months, next_due_date, received_by, reference_id
-    ) VALUES (?, ?, ?, ?, 'Income', ?, ?, ?, ?, 7.5, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  stmt.run(
-    today, invNo, customer.name, customer.customer_type,
-    category || 'Monthly Bandwidth Subscription',
-    description || `${customer.service_plan} Renewal (${months} Mo)`,
-    gross, isVatExempt ? 1 : 0, vatAmount, netAmount,
-    paymentMode || 'Bank Transfer', months, nextDueDate,
-    req.user.fullname, customer.id
-  );
-
-  res.json({ message: 'Payment recorded and posted to Accounting Income Day Book successfully', invNo, nextDueDate });
+  db.prepare(`
+    INSERT INTO accounting_ledger (entry_date, inv_no, customer_name, customer_type, type, category, description, gross_amount, is_vat_exempt, vat_rate, vat_amount, net_amount, payment_mode, reference_id)
+    VALUES (?, ?, ?, ?, 'Income', 'Monthly Bandwidth Subscription', ?, ?, 0, 7.5, ?, ?, 'Bank Transfer', ?)
+  `).run(today, invNo, cust.name, cust.customer_type, description, amount, vat, net, cust.id);
+  
+  req.io.emit('erp-data-changed');
+  res.json({ message: 'Payment recorded and Ledger updated' });
 });
 
 export default router;

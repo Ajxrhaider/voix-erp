@@ -9,13 +9,23 @@ router.get('/', authenticateToken, (req, res) => {
 });
 
 router.post('/', authenticateToken, (req, res) => {
-  const { customer_name, customer_type, phone, location, plan, amount } = req.body;
+  // Captures all original spreadsheet columns
+  const { 
+    customer_name, customer_type, phone, location, plan, amount,
+    date_of_payment, priority, start_date, end_date, sales_made_by, notes 
+  } = req.body;
+  
   const depId = generateId('deployment', 'DEP');
   
   db.prepare(`
-    INSERT INTO deployments (id, customer_name, customer_type, phone, location, plan, amount, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'Awaiting Splicing')
-  `).run(depId, customer_name, customer_type || 'FTTH', phone || '', location, plan, parseFloat(amount) || 0);
+    INSERT INTO deployments (
+      id, customer_name, customer_type, phone, location, plan, amount, status,
+      date_of_payment, priority, start_date, end_date, sales_made_by, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Awaiting Splicing', ?, ?, ?, ?, ?, ?)
+  `).run(
+    depId, customer_name, customer_type || 'FTTH', phone || '', location, plan, parseFloat(amount) || 0,
+    date_of_payment || null, priority || 'Medium', start_date || null, end_date || null, sales_made_by || '', notes || ''
+  );
 
   req.io.emit('erp-data-changed');
   res.status(201).json({ id: depId });
@@ -29,7 +39,7 @@ router.patch('/:id/resolve', authenticateToken, requireRoles(['HOD NOC', 'NOC', 
   db.prepare(`UPDATE deployments SET status = 'Completed', fat_box = ?, splitter_port = ?, onu_mac = ?, assigned_ip = ? WHERE id = ?`)
     .run(fat_box || 'FAT-01', splitter_port || 'Port 4', onu_mac || '', assigned_ip || '', dep.id);
 
-  // AUTOMATED FLOW: Finished deployment creates Customer Profile
+  // AUTOMATED FLOW: Creates Customer Profile
   const existingCust = db.prepare(`SELECT id FROM customers WHERE name = ?`).get(dep.customer_name);
   if (!existingCust) {
     const custId = generateId('customer', 'CUST');
@@ -41,7 +51,7 @@ router.patch('/:id/resolve', authenticateToken, requireRoles(['HOD NOC', 'NOC', 
     `).run(custId, voixNo, dep.customer_name, dep.customer_type, dep.phone || '', dep.location, onu_mac || '', dep.plan, assigned_ip || '');
   }
 
-  // AUTOMATED FLOW: Record installation fee in Accounting Income
+  // AUTOMATED FLOW: Income Record
   if (dep.amount > 0) {
     const invNo = `INV-DEP-${Date.now().toString().slice(-4)}`;
     const today = new Date().toISOString().split('T')[0];

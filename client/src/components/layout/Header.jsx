@@ -1,9 +1,9 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { AppContext } from '../../context/AppContext';
-import { Bell, LogOut, User } from 'lucide-react';
+import { Bell, LogOut, User, Menu } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
-export default function Header() {
+export default function Header({ setIsMobileMenuOpen }) {
   const { user, logout } = useContext(AppContext);
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
@@ -37,10 +37,16 @@ export default function Header() {
   const primaryRole = (user?.roles || [])[0] || 'User';
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm no-print">
-      <h2 className="text-lg font-bold text-slate-800 hidden sm:block">Portal Overview</h2>
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 shadow-sm no-print sticky top-0 z-30 w-full">
+      <div className="flex items-center gap-3">
+        {/* Mobile Hamburger Toggle */}
+        <button onClick={() => setIsMobileMenuOpen && setIsMobileMenuOpen(true)} className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg md:hidden">
+          <Menu className="w-6 h-6" />
+        </button>
+        <h2 className="text-lg font-bold text-slate-800 hidden sm:block">Portal Overview</h2>
+      </div>
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-4 sm:gap-6">
         <div className="relative cursor-pointer">
           <Bell className="w-5 h-5 text-slate-600 hover:text-voix-600 transition" />
           {notifications.length > 0 && (
@@ -56,12 +62,12 @@ export default function Header() {
             <p className="text-[10px] uppercase font-bold text-voix-600 tracking-wider">{primaryRole}</p>
           </div>
           
-          <div className="flex gap-2 border-l border-slate-200 pl-4">
+          <div className="flex gap-1 sm:gap-2 border-l border-slate-200 pl-3 sm:pl-4">
             <Link to="/profile" className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-lg transition" title="My Account">
-              <User className="w-4 h-4" />
+              <User className="w-5 h-5 sm:w-4 sm:h-4" />
             </Link>
             <button onClick={handleLogout} className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition" title="Logout">
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-5 h-5 sm:w-4 sm:h-4" />
             </button>
           </div>
         </div>
