@@ -35,7 +35,6 @@ router.patch('/:id/escalate', authenticateToken, (req, res) => {
 
   db.prepare(`UPDATE tickets SET status = 'Escalated', priority = 'High' WHERE id = ?`).run(ticket.id);
 
-  // EMAIL: Important Ticket Escalation to Management
   const managers = db.prepare(`SELECT email FROM users WHERE (roles LIKE '%"Management"%' OR roles LIKE '%"GM"%') AND email IS NOT NULL AND email != ''`).all();
   const emails = managers.map(m => m.email).join(',');
   if (emails) {
@@ -59,7 +58,6 @@ router.post('/:id/convert-to-work-order', authenticateToken, requireRoles(['HOD 
 
   const team = db.prepare(`SELECT * FROM daily_teams WHERE id = ?`).get(team_id);
   if (team) {
-    // EMAIL: Notify ALL members of the assigned team
     const members = JSON.parse(team.member_ids || '[]');
     const allStaffIds = [team.leader_id, ...members];
     
@@ -100,7 +98,6 @@ router.patch('/work-orders/:id/complete', authenticateToken, (req, res) => {
   if (wo && wo.ticket_id) {
     db.prepare(`UPDATE tickets SET status = 'Resolved' WHERE id = ?`).run(wo.ticket_id);
     
-    // EMAIL: Notify NOC & Customer Service that WO is fulfilled
     const nocs = db.prepare(`SELECT email FROM users WHERE (roles LIKE '%"NOC"%' OR roles LIKE '%"Customer Service"%') AND email IS NOT NULL AND email != ''`).all();
     const nocEmails = nocs.map(n => n.email).join(',');
     if (nocEmails) {
@@ -113,11 +110,35 @@ router.patch('/work-orders/:id/complete', authenticateToken, (req, res) => {
 });
 
 router.patch('/:id/close', authenticateToken, (req, res) => {
-  const { resolution_datetime, mttr, customer_feedback, closure_notes, resolution_by } = req.body;
-  db.prepare(`UPDATE tickets SET status = 'Closed', resolution_datetime = ?, mttr = ?, resolution_by = ?, customer_feedback = ?, closure_notes = ?, ticket_closed_by = ? WHERE id = ?`)
-    .run(resolution_datetime || new Date().toISOString().replace('T', ' ').substring(0, 19), mttr || '', resolution_by || '', customer_feedback || '', closure_notes || '', req.user.fullname, req.params.id);
+  const { resolution_datetime, mttr, customer_feedback, closure_notes, resolution_by, status } = req.body;
+  db.prepare(`UPDATE tickets SET status = ?, resolution_datetime = ?, mttr = ?, resolution_by = ?, customer_feedback = ?, closure_notes = ?, ticket_closed_by = ? WHERE id = ?`)
+    .run(status || 'Closed', resolution_datetime || new Date().toISOString().replace('T', ' ').substring(0, 19), mttr || '', resolution_by || '', customer_feedback || '', closure_notes || '', req.user.fullname, req.params.id);
   req.io.emit('erp-data-changed');
   res.json({ message: 'Ticket Closed.' });
+});
+
+router.get('/cc-reports', authenticateToken, (req, res) => {
+  res.json(db.prepare(`SELECT * FROM customer_care_reports ORDER BY created_at DESC`).all());
+});
+
+router.post('/cc-reports', authenticateToken, (req, res) => {
+  const { report_date, channels, interactions, ticketing, financial, social, summary } = req.body;
+  const rptId = generateId('cc_report', 'CCR');
+  
+  db.prepare(`
+    INSERT INTO customer_care_reports (
+      id, user_id, fullname, report_date, channels_json, interaction_log, 
+      ticketing_json, financial_json, social_json, summary_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    rptId, req.user.id, req.user.fullname, report_date, 
+    JSON.stringify(channels || {}), JSON.stringify(interactions || []), 
+    JSON.stringify(ticketing || {}), JSON.stringify(financial || {}), 
+    JSON.stringify(social || {}), JSON.stringify(summary || {})
+  );
+
+  req.io.emit('erp-data-changed');
+  res.status(201).json({ id: rptId, message: 'Daily CC Report Logged' });
 });
 
 export default router;

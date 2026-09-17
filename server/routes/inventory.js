@@ -101,16 +101,27 @@ router.patch('/requisitions/:id/approve', authenticateToken, (req, res) => {
       db.prepare(`UPDATE inventory SET qty = MAX(0, qty - ?) WHERE id = ?`).run(item.qty, item.itemId);
     }
 
+    // TIGHT INVENTORY FLOW: Issue to WO and strictly notify the Field Team Lead
     if (reqRecord.work_order_id) {
       const wo = db.prepare(`SELECT assigned_materials, team_id FROM work_orders WHERE id = ?`).get(reqRecord.work_order_id);
       if (wo) {
         let currentAssigned = JSON.parse(wo.assigned_materials || '[]');
         materials.forEach(m => currentAssigned.push(m));
         db.prepare(`UPDATE work_orders SET assigned_materials = ? WHERE id = ?`).run(JSON.stringify(currentAssigned), reqRecord.work_order_id);
+        
+        const team = db.prepare(`SELECT leader_id FROM daily_teams WHERE id = ?`).get(wo.team_id);
+        if (team) {
+          db.prepare(`INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, 'Materials')`)
+            .run(team.leader_id, 'Materials Issued', `Materials for ${reqRecord.work_order_id} have been issued.`);
+          
+          const leadUser = db.prepare(`SELECT email FROM users WHERE id = ?`).get(team.leader_id);
+          if (leadUser?.email) {
+            sendEmail(leadUser.email, 'Materials Issued to Work Order', `Inventory has officially issued the requested materials for Work Order ${reqRecord.work_order_id}. You may now proceed with the field task.`);
+          }
+        }
       }
     }
 
-    // EMAIL: Materials Issued Notification
     if (requester?.email) sendEmail(requester.email, 'Materials Issued', `Inventory has officially issued the materials for Requisition ${reqRecord.id}.`);
     
     req.io.emit('erp-data-changed');

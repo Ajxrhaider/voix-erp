@@ -95,7 +95,7 @@ export default function CustomerService() {
       onTabChange={setActiveTab}
       headerActions={
         activeTab === 'queries' && hasRole(['NOC', 'Customer Service', 'Management', 'Dev']) && (
-          <button onClick={() => setIsModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 md:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full md:w-auto"><Plus className="w-4 h-4"/> Log New Query</button>
+          <button onClick={() => setIsModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 md:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full md:w-auto shadow-sm"><Plus className="w-4 h-4"/> Log New Query</button>
         )
       }
     >
@@ -116,7 +116,7 @@ export default function CustomerService() {
                 <span className="bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">{t.status}</span>
                 <div className="flex flex-row gap-2 mt-0 sm:mt-3 w-full sm:w-auto justify-end">
                   {t.status !== 'Resolved' && t.status !== 'Escalated' && (
-                    <button onClick={() => handleEscalate(t.id)} className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1"><AlertTriangle className="w-3.5 h-3.5"/> Escalate</button>
+                    <button onClick={() => handleEscalate(t.id)} className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 shadow-sm"><AlertTriangle className="w-3.5 h-3.5"/> Escalate</button>
                   )}
                   {(t.status === 'Resolved' || hasRole(['Management', 'Dev'])) && (
                     <button onClick={() => setClosingTicket(t)} className="bg-slate-900 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition shadow-sm w-full sm:w-auto">Close Query</button>
@@ -155,7 +155,7 @@ export default function CustomerService() {
             <div className="bg-white p-4 rounded-xl border border-slate-200">
               <div className="flex justify-between items-center mb-4">
                 <h4 className="font-bold text-slate-800">2. Customer Interaction Log</h4>
-                <button type="button" onClick={handleAddInteraction} className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Plus className="w-3 h-3"/> Add Entry</button>
+                <button type="button" onClick={handleAddInteraction} className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm"><Plus className="w-3 h-3"/> Add Entry</button>
               </div>
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left text-xs min-w-[800px]">
@@ -176,22 +176,22 @@ export default function CustomerService() {
                       <tr key={idx}>
                         <td className="p-2 font-mono text-slate-400">{idx + 1}</td>
                         <td className="p-2">
-                          <input list="customers-list" type="text" placeholder="VN-..." value={interaction.account_id} onChange={(e) => handleUpdateInteraction(idx, 'account_id', e.target.value)} className="w-full border p-1.5 rounded font-mono text-[10px]" />
+                          <input list="customers-list" type="text" placeholder="VN-..." value={interaction.account_id} onChange={(e) => handleUpdateInteraction(idx, 'account_id', e.target.value)} className="w-full border p-2 rounded-lg font-mono text-[10px]" />
                         </td>
                         <td className="p-2">
-                          <input type="text" placeholder="Describe interaction..." value={interaction.issue} onChange={(e) => handleUpdateInteraction(idx, 'issue', e.target.value)} className="w-full border p-1.5 rounded" />
+                          <input type="text" placeholder="Describe interaction..." value={interaction.issue} onChange={(e) => handleUpdateInteraction(idx, 'issue', e.target.value)} className="w-full border p-2 rounded-lg" />
                         </td>
                         <td className="p-2">
-                          <select value={interaction.recorded_in} onChange={(e) => handleUpdateInteraction(idx, 'recorded_in', e.target.value)} className="w-full border p-1.5 rounded"><option>NIL</option><option>VNQ</option><option>VND</option></select>
+                          <select value={interaction.recorded_in} onChange={(e) => handleUpdateInteraction(idx, 'recorded_in', e.target.value)} className="w-full border p-2 rounded-lg"><option>NIL</option><option>VNQ</option><option>VND</option></select>
                         </td>
                         <td className="p-2">
-                          <select value={interaction.profile_updated} onChange={(e) => handleUpdateInteraction(idx, 'profile_updated', e.target.value)} className="w-full border p-1.5 rounded"><option>NIL</option><option>YES</option></select>
+                          <select value={interaction.profile_updated} onChange={(e) => handleUpdateInteraction(idx, 'profile_updated', e.target.value)} className="w-full border p-2 rounded-lg"><option>NIL</option><option>YES</option></select>
                         </td>
                         <td className="p-2">
-                          <select value={interaction.vncl_updated} onChange={(e) => handleUpdateInteraction(idx, 'vncl_updated', e.target.value)} className="w-full border p-1.5 rounded"><option>NIL</option><option>YES</option></select>
+                          <select value={interaction.vncl_updated} onChange={(e) => handleUpdateInteraction(idx, 'vncl_updated', e.target.value)} className="w-full border p-2 rounded-lg"><option>NIL</option><option>YES</option></select>
                         </td>
                         <td className="p-2">
-                          <select value={interaction.status} onChange={(e) => handleUpdateInteraction(idx, 'status', e.target.value)} className="w-full border p-1.5 rounded font-bold"><option>OPEN</option><option>CLOSED</option></select>
+                          <select value={interaction.status} onChange={(e) => handleUpdateInteraction(idx, 'status', e.target.value)} className="w-full border p-2 rounded-lg font-bold"><option>OPEN</option><option>CLOSED</option></select>
                         </td>
                         <td className="p-2 text-center">
                           <button type="button" onClick={() => handleRemoveInteraction(idx)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button>
@@ -294,12 +294,13 @@ export default function CustomerService() {
               
               <textarea required placeholder="Issue Description" onChange={e => setFormData({...formData, description: e.target.value})} className="border p-2.5 rounded-lg sm:col-span-2 md:col-span-4 h-24 bg-slate-50" />
               
-              <div className="sm:col-span-2 flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg border"><input type="checkbox" onChange={e => setFormData({...formData, whatsapp_sos_sent: e.target.checked})} className="w-4 h-4 rounded text-emerald-600"/> <label className="text-xs font-bold">WhatsApp SOS Sent</label></div>
+              <div className="sm:col-span-2 flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg border"><input type="checkbox" onChange={e => setFormData({...formData, whatsapp_sos_sent: e.target.checked})} className="w-5 h-5 sm:w-4 sm:h-4 rounded text-emerald-600"/><label className="text-xs font-bold">WhatsApp SOS Sent</label></div>
               <input type="text" placeholder="Assigned To (Fiber/NOC Team)" onChange={e => setFormData({...formData, assigned_to: e.target.value})} className="border p-2.5 rounded-lg sm:col-span-2 bg-slate-50" />
+              <div className="sm:col-span-2 md:col-span-4"><label className="text-[10px] font-bold block mb-1">Ticket Opened By</label><input type="text" value={user?.fullname || 'System'} readOnly className="w-full border p-2.5 rounded-lg bg-slate-100 text-slate-500 font-bold" /></div>
               
-              <div className="md:col-span-4 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t mt-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 border rounded-lg font-medium">Cancel</button>
-                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 text-white font-bold rounded-lg shadow-sm">Log Query</button>
+              <div className="sm:col-span-2 md:col-span-4 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t mt-2">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg text-sm font-bold w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 text-white font-bold rounded-lg shadow-sm w-full sm:w-auto">Log Query</button>
               </div>
             </form>
           </div>
@@ -309,18 +310,19 @@ export default function CustomerService() {
       {/* CLOSE QUERY MODAL */}
       {closingTicket && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-lg">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-lg max-h-[90vh] overflow-y-auto custom-scrollbar">
             <h3 className="font-bold text-lg mb-4 border-b pb-2">Close Ticket: {closingTicket.id}</h3>
             <form onSubmit={handleCloseTicket} className="space-y-4">
+              <div><label className="text-[10px] font-bold block mb-1">Query Status</label><select onChange={e => setClosingTicket({...closingTicket, status: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50 font-bold"><option value="Resolved">Resolved</option><option value="Closed">Closed</option></select></div>
               <div><label className="text-[10px] font-bold block mb-1">Resolution Date/Time</label><input type="datetime-local" onChange={e => setClosingTicket({...closingTicket, resolution_datetime: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" /></div>
               <input type="text" placeholder="Mean Time to Resolve (MTTR)" onChange={e => setClosingTicket({...closingTicket, mttr: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
               <input type="text" placeholder="Resolved By (Technician Name)" onChange={e => setClosingTicket({...closingTicket, resolution_by: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
               <textarea placeholder="Customer Feedback" onChange={e => setClosingTicket({...closingTicket, customer_feedback: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50 h-20" />
               <textarea required placeholder="Official Closure Notes" onChange={e => setClosingTicket({...closingTicket, closure_notes: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50 h-20" />
               
-              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
-                <button type="button" onClick={() => setClosingTicket(null)} className="px-4 py-2.5 sm:py-2 border rounded-lg font-medium">Cancel</button>
-                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-slate-900 text-white font-bold rounded-lg shadow-sm">Formally Close Ticket</button>
+              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t mt-2">
+                <button type="button" onClick={() => setClosingTicket(null)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg text-sm font-bold w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-slate-900 text-white font-bold rounded-lg shadow-sm w-full sm:w-auto">Formally Close Ticket</button>
               </div>
             </form>
           </div>
@@ -332,19 +334,19 @@ export default function CustomerService() {
         <div className="fixed inset-0 bg-slate-900/80 flex items-center justify-center p-2 sm:p-6 z-[100] print:p-0 print:bg-white">
           <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] sm:max-h-[85vh] flex flex-col overflow-hidden shadow-2xl print:shadow-none print:max-h-none print:h-auto print:rounded-none">
             
-            <div className="p-4 sm:p-6 border-b flex justify-between items-center bg-slate-50 no-print shrink-0">
+            <div className="p-4 sm:p-6 border-b flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-slate-50 no-print shrink-0">
               <h2 className="font-bold text-xl text-slate-800 flex items-center gap-2"><FileText className="text-blue-600"/> Document Viewer</h2>
               <div className="flex gap-2">
-                <button onClick={() => window.print()} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2"><Printer className="w-4 h-4"/> Print</button>
-                <button onClick={() => setViewingReport(null)} className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-4 py-2 rounded-lg text-sm font-bold">Close</button>
+                <button onClick={() => window.print()} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm"><Printer className="w-4 h-4"/> Print</button>
+                <button onClick={() => setViewingReport(null)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold w-full sm:w-auto transition shadow-sm">Close</button>
               </div>
             </div>
 
             <div className="p-6 sm:p-10 overflow-y-auto custom-scrollbar text-sm print:overflow-visible print:p-4 text-black font-sans print-document">
               
               <div className="text-center mb-8 border-b-2 border-slate-800 pb-4">
-                <h1 className="text-2xl font-black uppercase tracking-wider mb-2">Daily Customer Care Activity Report</h1>
-                <div className="flex justify-between font-bold text-base mt-4">
+                <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wider mb-2">Daily Customer Care Activity Report</h1>
+                <div className="flex justify-between font-bold text-sm sm:text-base mt-4">
                   <p>Date: <span className="font-normal">{viewingReport.report_date}</span></p>
                   <p>Representative: <span className="font-normal uppercase">{viewingReport.fullname}</span></p>
                 </div>
@@ -353,52 +355,56 @@ export default function CustomerService() {
               <div className="mb-6">
                 <h3 className="font-bold text-lg border-b border-slate-300 pb-1 mb-3">1. Interaction Overview</h3>
                 <p className="text-xs mb-2">Total volume of customer touchpoints across all primary channels.</p>
-                <table className="w-full text-left border-collapse border border-slate-400">
-                  <thead className="bg-slate-100">
-                    <tr><th className="border border-slate-400 p-2">Channel</th><th className="border border-slate-400 p-2">Successful Interactions</th><th className="border border-slate-400 p-2">Pending/Follow-up</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr><td className="border border-slate-400 p-2">Phone Calls</td><td className="border border-slate-400 p-2">{JSON.parse(viewingReport.channels_json).phone}</td><td className="border border-slate-400 p-2">0</td></tr>
-                    <tr><td className="border border-slate-400 p-2">Whatsapp Chat</td><td className="border border-slate-400 p-2">{JSON.parse(viewingReport.channels_json).whatsapp}</td><td className="border border-slate-400 p-2">0</td></tr>
-                    <tr><td className="border border-slate-400 p-2">Email</td><td className="border border-slate-400 p-2">{JSON.parse(viewingReport.channels_json).email}</td><td className="border border-slate-400 p-2">0</td></tr>
-                    <tr><td className="border border-slate-400 p-2">In-Person</td><td className="border border-slate-400 p-2">{JSON.parse(viewingReport.channels_json).in_person}</td><td className="border border-slate-400 p-2">0</td></tr>
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto w-full">
+                  <table className="w-full text-left border-collapse border border-slate-400 min-w-[500px]">
+                    <thead className="bg-slate-100">
+                      <tr><th className="border border-slate-400 p-2">Channel</th><th className="border border-slate-400 p-2">Successful Interactions</th><th className="border border-slate-400 p-2">Pending/Follow-up</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td className="border border-slate-400 p-2">Phone Calls</td><td className="border border-slate-400 p-2">{JSON.parse(viewingReport.channels_json).phone}</td><td className="border border-slate-400 p-2">0</td></tr>
+                      <tr><td className="border border-slate-400 p-2">Whatsapp Chat</td><td className="border border-slate-400 p-2">{JSON.parse(viewingReport.channels_json).whatsapp}</td><td className="border border-slate-400 p-2">0</td></tr>
+                      <tr><td className="border border-slate-400 p-2">Email</td><td className="border border-slate-400 p-2">{JSON.parse(viewingReport.channels_json).email}</td><td className="border border-slate-400 p-2">0</td></tr>
+                      <tr><td className="border border-slate-400 p-2">In-Person</td><td className="border border-slate-400 p-2">{JSON.parse(viewingReport.channels_json).in_person}</td><td className="border border-slate-400 p-2">0</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <div className="mb-6">
                 <h3 className="font-bold text-lg border-b border-slate-300 pb-1 mb-3">2. Customer Interaction Log</h3>
                 <p className="text-xs mb-2">Detailed record of every customer touchpoint, including identification and specific concerns.</p>
-                <table className="w-full text-left border-collapse border border-slate-400 text-xs">
-                  <thead className="bg-slate-100">
-                    <tr>
-                      <th className="border border-slate-400 p-2">S/N</th>
-                      <th className="border border-slate-400 p-2">ID / Account Number</th>
-                      <th className="border border-slate-400 p-2">Issue / Nature of Interaction</th>
-                      <th className="border border-slate-400 p-2">VNQ or VND</th>
-                      <th className="border border-slate-400 p-2">Update Profile</th>
-                      <th className="border border-slate-400 p-2">Update VNCL</th>
-                      <th className="border border-slate-400 p-2">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {JSON.parse(viewingReport.interaction_log).map((log, i) => (
-                      <tr key={i}>
-                        <td className="border border-slate-400 p-2 text-center">{i + 1}</td>
-                        <td className="border border-slate-400 p-2 font-mono">{log.account_id}</td>
-                        <td className="border border-slate-400 p-2 uppercase">{log.issue}</td>
-                        <td className="border border-slate-400 p-2 text-center">{log.recorded_in}</td>
-                        <td className="border border-slate-400 p-2 text-center">{log.profile_updated}</td>
-                        <td className="border border-slate-400 p-2 text-center">{log.vncl_updated}</td>
-                        <td className="border border-slate-400 p-2 text-center font-bold">{log.status}</td>
+                <div className="overflow-x-auto w-full">
+                  <table className="w-full text-left border-collapse border border-slate-400 text-xs min-w-[700px]">
+                    <thead className="bg-slate-100">
+                      <tr>
+                        <th className="border border-slate-400 p-2">S/N</th>
+                        <th className="border border-slate-400 p-2">ID / Account Number</th>
+                        <th className="border border-slate-400 p-2">Issue / Nature of Interaction</th>
+                        <th className="border border-slate-400 p-2">VNQ or VND</th>
+                        <th className="border border-slate-400 p-2">Update Profile</th>
+                        <th className="border border-slate-400 p-2">Update VNCL</th>
+                        <th className="border border-slate-400 p-2">Status</th>
                       </tr>
-                    ))}
-                    {JSON.parse(viewingReport.interaction_log).length === 0 && <tr><td colSpan="7" className="border border-slate-400 p-4 text-center">No individual interactions logged.</td></tr>}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {JSON.parse(viewingReport.interaction_log).map((log, i) => (
+                        <tr key={i}>
+                          <td className="border border-slate-400 p-2 text-center">{i + 1}</td>
+                          <td className="border border-slate-400 p-2 font-mono">{log.account_id}</td>
+                          <td className="border border-slate-400 p-2 uppercase">{log.issue}</td>
+                          <td className="border border-slate-400 p-2 text-center">{log.recorded_in}</td>
+                          <td className="border border-slate-400 p-2 text-center">{log.profile_updated}</td>
+                          <td className="border border-slate-400 p-2 text-center">{log.vncl_updated}</td>
+                          <td className="border border-slate-400 p-2 text-center font-bold">{log.status}</td>
+                        </tr>
+                      ))}
+                      {JSON.parse(viewingReport.interaction_log).length === 0 && <tr><td colSpan="7" className="border border-slate-400 p-4 text-center">No individual interactions logged.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-8 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
                 <div>
                   <h3 className="font-bold text-lg border-b border-slate-300 pb-1 mb-3">3. Ticketing & Issue Tracking</h3>
                   <ul className="space-y-1">
@@ -436,8 +442,8 @@ export default function CustomerService() {
               </div>
 
               <div className="mt-12 pt-8 border-t-2 border-slate-800 text-center font-bold">
-                <p>_____________________________________</p>
-                <p className="mt-2">Customer Service Representative Signature</p>
+                <p className="mx-auto w-48 border-b-2 border-slate-800 mb-2"></p>
+                <p>Customer Service Representative Signature</p>
               </div>
 
             </div>

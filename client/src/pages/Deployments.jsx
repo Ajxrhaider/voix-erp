@@ -78,8 +78,8 @@ export default function Deployments() {
               <input type="text" placeholder="Notes / Observations" onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
               
               <div className="md:col-span-2 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t mt-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 border rounded-lg text-sm font-medium text-center">Cancel</button>
-                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold text-center">Initialize Deployment</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg text-sm font-bold w-full sm:w-auto transition">Cancel</button>
+                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold text-center w-full sm:w-auto">Initialize Deployment</button>
               </div>
             </form>
           </div>
