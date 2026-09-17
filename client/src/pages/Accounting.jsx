@@ -1,5 +1,6 @@
-import React, { useState, useContext, useMemo } from 'react';
+import React, { useState, useContext, useMemo, useEffect } from 'react';
 import { AppContext } from '../context/AppContext';
+import ModuleLayout from '../components/layout/ModuleLayout';
 import * as XLSX from 'xlsx';
 
 const INCOME_CATEGORIES = [
@@ -13,7 +14,7 @@ const INCOME_CATEGORIES = [
 ];
 
 export default function Accounting() {
-  const { ledger, authFetch, refreshSystemData, user } = useContext(AppContext);
+  const { ledger, authFetch, refreshSystemData, user, hasRole } = useContext(AppContext);
 
   const [activeTab, setActiveTab] = useState('excel-grid');
   const [currencySymbol] = useState('₦');
@@ -24,12 +25,10 @@ export default function Accounting() {
   const [endDate, setEndDate] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Income records only
   const incomeRecords = useMemo(() => {
     return ledger.filter(l => l.type === 'Income');
   }, [ledger]);
 
-  // Available Reporting Months
   const availableMonths = useMemo(() => {
     const months = new Set(incomeRecords.map(r => r.entry_date ? r.entry_date.substring(0, 7) : ''));
     const filtered = Array.from(months).filter(Boolean).sort().reverse();
@@ -38,10 +37,15 @@ export default function Accounting() {
 
   const [selectedMonth, setSelectedMonth] = useState(() => availableMonths[0] || '2026-08');
 
-  // Form Data State
+  useEffect(() => {
+    if (!availableMonths.includes(selectedMonth) && availableMonths.length > 0) {
+      setSelectedMonth(availableMonths[0]);
+    }
+  }, [availableMonths]);
+
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
-    invNo: `INV-VN-2026-${String(incomeRecords.length + 101).padStart(3, '0')}`,
+    invNo: `INV-VN-${new Date().getFullYear()}-${String(incomeRecords.length + 101).padStart(3, '0')}`,
     customerName: '',
     customerType: 'FTTH',
     category: 'Monthly Bandwidth Subscription',
@@ -56,7 +60,6 @@ export default function Accounting() {
     receivedBy: user?.fullname || 'Finance Desk'
   });
 
-  // Auto-calculate Next Due Date
   const calculatedDueDate = useMemo(() => {
     if (!formData.date || formData.durationMonths === 0) return '-';
     const monthsToAdd = formData.durationMonths === -1 ? (parseInt(formData.customMonths) || 1) : formData.durationMonths;
@@ -67,7 +70,6 @@ export default function Accounting() {
     return pDate.toISOString().split('T')[0];
   }, [formData.date, formData.durationMonths, formData.customMonths]);
 
-  // Auto VAT Breakdown Engine
   const calculatedTax = useMemo(() => {
     const gross = parseFloat(formData.grossAmount) || 0;
     if (gross <= 0) return { gross: 0, vat: 0, net: 0 };
@@ -125,7 +127,6 @@ export default function Accounting() {
     }
   };
 
-  // Filtered Records
   const filteredRecords = useMemo(() => {
     return incomeRecords.filter(r => {
       const matchesSearch =
@@ -142,7 +143,6 @@ export default function Accounting() {
     });
   }, [incomeRecords, searchQuery, customerTypeFilter, vatFilter, startDate, endDate]);
 
-  // Aggregate Totals
   const totals = useMemo(() => {
     return filteredRecords.reduce((acc, r) => {
       acc.gross += r.gross_amount || 0;
@@ -154,7 +154,6 @@ export default function Accounting() {
     }, { gross: 0, vat: 0, net: 0, ftthCount: 0, enterpriseCount: 0 });
   }, [filteredRecords]);
 
-  // Monthly Summary
   const monthlyRecords = useMemo(() => {
     return incomeRecords.filter(r => r.entry_date && r.entry_date.startsWith(selectedMonth));
   }, [incomeRecords, selectedMonth]);
@@ -177,7 +176,6 @@ export default function Accounting() {
     return { totalGross, totalVat, totalNet, categoryBreakdown };
   }, [monthlyRecords]);
 
-  // Due Register Records
   const dueRegisterRecords = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     return incomeRecords
@@ -219,186 +217,92 @@ export default function Accounting() {
       "Next Due Date": r.next_due_date,
       "Received By": r.received_by
     }));
-
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(detailedRows);
-    XLSX.utils.book_append_sheet(wb, ws, "Income Day Book");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailedRows), "Income Day Book");
     XLSX.writeFile(wb, `Voix_ERP_Income_DayBook_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Navigation Header (Gold Standard Slate-900) */}
-      <header className="bg-slate-900 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex items-center space-x-3">
-          <div className="bg-emerald-600 p-2.5 rounded-lg shadow-lg">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
+    <ModuleLayout
+      title="Accounting & Revenue"
+      subtitle="ISP Revenue Ledger • 7.5% Auto-VAT • Subscription Expirations"
+      headerActions={hasRole(['Accounting', 'Management', 'GM', 'Dev']) && (
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <button onClick={() => setIsModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center shadow-sm transition w-full sm:w-auto">+ Post Income Entry</button>
+          <button onClick={exportToExcel} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center shadow-sm transition w-full sm:w-auto">Export Excel (.xlsx)</button>
+        </div>
+      )}
+    >
+      <div className="bg-white p-2 rounded-xl border border-slate-200 flex space-x-2 text-xs font-bold overflow-x-auto custom-scrollbar mb-6 w-full">
+        <button onClick={() => setActiveTab('excel-grid')} className={`px-4 py-2.5 sm:py-2 rounded-lg whitespace-nowrap transition ${activeTab === 'excel-grid' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>📊 Income Day Book</button>
+        <button onClick={() => setActiveTab('due-register')} className={`px-4 py-2.5 sm:py-2 rounded-lg whitespace-nowrap transition ${activeTab === 'due-register' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>⏰ Renewal Register</button>
+        <button onClick={() => setActiveTab('monthly')} className={`px-4 py-2.5 sm:py-2 rounded-lg whitespace-nowrap transition ${activeTab === 'monthly' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>📅 Monthly VAT Summary</button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 w-full">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <p className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Gross Revenue Received</p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{currencySymbol}{totals.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <p className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">7.5% Output VAT Deducted</p>
+          <p className="text-xl sm:text-2xl font-bold text-amber-700 mt-1">{currencySymbol}{totals.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <p className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Net Earned Revenue</p>
+          <p className="text-xl sm:text-2xl font-bold text-emerald-700 mt-1">{currencySymbol}{totals.net.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <p className="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Client Ratio</p>
+          <p className="text-sm font-bold text-slate-900 mt-2"><span className="text-blue-700">{totals.ftthCount} FTTH</span> / <span className="text-purple-700">{totals.enterpriseCount} Enterprise</span></p>
+        </div>
+      </div>
+
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col lg:flex-row gap-3 items-start lg:items-center justify-between w-full">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full lg:w-auto">
+          <input type="text" placeholder="Search invoice, customer..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full sm:w-auto px-3 py-2 text-sm border border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400" />
+          <div className="flex gap-2 w-full sm:w-auto">
+            <select value={customerTypeFilter} onChange={(e) => setCustomerTypeFilter(e.target.value)} className="w-full sm:w-auto px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 font-bold"><option value="ALL">All Types</option><option value="FTTH">FTTH (Home)</option><option value="Enterprise">Enterprise</option></select>
+            <select value={vatFilter} onChange={(e) => setVatFilter(e.target.value)} className="w-full sm:w-auto px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 font-bold"><option value="ALL">All Tax Status</option><option value="APPLICABLE">7.5% Taxed</option><option value="EXEMPT">Tax Exempt</option></select>
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              VOIX NETWORKS <span className="text-xs bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded-full font-semibold">Income & Revenue Day Book</span>
-            </h1>
-            <p className="text-xs text-slate-400">ISP Revenue Ledger • 7.5% Auto-VAT • Customer Due Date Schedule (FTTH / Enterprise)</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-sm transition"
-          >
-            + Post Income Entry
-          </button>
-          <button
-            onClick={exportToExcel}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium text-xs flex items-center gap-1.5 shadow-sm transition"
-          >
-            Export Excel (.xlsx)
-          </button>
-          <button
-            onClick={() => window.print()}
-            className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-lg font-medium text-xs transition"
-          >
-            Print Day Book
-          </button>
-        </div>
-      </header>
-
-      {/* Tabs */}
-      <div className="bg-white p-2 rounded-xl border border-slate-200 flex space-x-2 text-xs font-bold overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('excel-grid')}
-          className={`px-4 py-2 rounded-lg transition ${activeTab === 'excel-grid' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-        >
-          📊 Income Day Book Ledger (Excel View)
-        </button>
-        <button
-          onClick={() => setActiveTab('due-register')}
-          className={`px-4 py-2 rounded-lg transition ${activeTab === 'due-register' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-        >
-          ⏰ Renewal & Due Date Schedule
-        </button>
-        <button
-          onClick={() => setActiveTab('monthly')}
-          className={`px-4 py-2 rounded-lg transition ${activeTab === 'monthly' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-        >
-          📅 Monthly Revenue & VAT Summary
-        </button>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Gross Revenue Received</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{currencySymbol}{totals.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
-          <p className="text-xs text-slate-400 mt-1">{filteredRecords.length} Payment Receipts</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">7.5% Output VAT Deducted</p>
-          <p className="text-2xl font-bold text-amber-600 mt-1">{currencySymbol}{totals.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
-          <p className="text-xs text-slate-400 mt-1">Payable to FIRS</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Net Earned Revenue</p>
-          <p className="text-2xl font-bold text-emerald-600 mt-1">{currencySymbol}{totals.net.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
-          <p className="text-xs text-slate-400 mt-1">Exclusive of 7.5% Tax</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Client Ratio</p>
-          <p className="text-sm font-bold text-slate-800 mt-2">
-            <span className="text-blue-600">{totals.ftthCount} FTTH</span> / <span className="text-purple-600">{totals.enterpriseCount} Enterprise</span>
-          </p>
         </div>
       </div>
 
-      {/* Filter / Search Bar */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
-          <input
-            type="text"
-            placeholder="Search customer, invoice #, or plan..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 min-w-[220px]"
-          />
-          <select
-            value={customerTypeFilter}
-            onChange={(e) => setCustomerTypeFilter(e.target.value)}
-            className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
-          >
-            <option value="ALL">All Types</option>
-            <option value="FTTH">FTTH (Home)</option>
-            <option value="Enterprise">Enterprise</option>
-          </select>
-          <select
-            value={vatFilter}
-            onChange={(e) => setVatFilter(e.target.value)}
-            className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
-          >
-            <option value="ALL">All Tax Status</option>
-            <option value="APPLICABLE">7.5% Taxed</option>
-            <option value="EXEMPT">Tax Exempt</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-2 text-xs">
-          <span>From:</span>
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="px-2 py-1 border rounded" />
-          <span>To:</span>
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="px-2 py-1 border rounded" />
-        </div>
-      </div>
-
-      {/* TAB 1: Columnar Day Book Ledger */}
       {activeTab === 'excel-grid' && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse font-mono">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full">
+          <div className="overflow-x-auto custom-scrollbar w-full">
+            <table className="w-full text-left text-xs border-collapse font-mono min-w-[1000px]">
               <thead>
                 <tr className="bg-slate-900 text-white font-sans text-[11px]">
-                  <th className="p-2.5">Date</th>
-                  <th className="p-2.5">Invoice #</th>
-                  <th className="p-2.5">Customer Name</th>
-                  <th className="p-2.5 text-center">Type</th>
-                  <th className="p-2.5">Category</th>
-                  <th className="p-2.5 text-right bg-slate-800">Gross Total (₦)</th>
-                  <th className="p-2.5 text-center">VAT Status</th>
-                  <th className="p-2.5 text-right bg-amber-950/60">7.5% VAT (₦)</th>
-                  <th className="p-2.5 text-right bg-emerald-950/60">Net Revenue (₦)</th>
-                  <th className="p-2.5 text-center">Next Due</th>
-                  <th className="p-2.5">Received By</th>
+                  <th className="p-2.5 border-r border-slate-800">Date</th><th className="p-2.5 border-r border-slate-800">Invoice #</th><th className="p-2.5 border-r border-slate-800">Customer Name</th><th className="p-2.5 text-center border-r border-slate-800">Type</th><th className="p-2.5 border-r border-slate-800">Category</th><th className="p-2.5 text-right bg-slate-800 border-r border-slate-800">Gross (₦)</th><th className="p-2.5 text-center border-r border-slate-800">VAT Status</th><th className="p-2.5 text-right bg-amber-950/60 border-r border-slate-800">7.5% VAT (₦)</th><th className="p-2.5 text-right bg-emerald-950/60 border-r border-slate-800">Net Revenue (₦)</th><th className="p-2.5 text-center border-r border-slate-800">Next Due</th><th className="p-2.5">Received By</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-[11px]">
                 {filteredRecords.map(r => (
-                  <tr key={r.id} className="hover:bg-slate-50">
-                    <td className="p-2.5 whitespace-nowrap">{r.entry_date}</td>
-                    <td className="p-2.5 font-bold text-emerald-700">{r.inv_no}</td>
-                    <td className="p-2.5 font-sans font-bold text-slate-900">{r.customer_name}</td>
-                    <td className="p-2.5 text-center font-sans">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.customer_type === 'FTTH' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
-                        {r.customer_type}
-                      </span>
-                    </td>
-                    <td className="p-2.5 font-sans text-slate-600">{r.category}</td>
-                    <td className="p-2.5 text-right font-black bg-slate-50">{currencySymbol}{r.gross_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td className="p-2.5 text-center font-sans">{r.is_vat_exempt ? 'EXEMPT' : '7.5% VAT'}</td>
-                    <td className="p-2.5 text-right font-bold text-amber-700">{currencySymbol}{r.vat_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td className="p-2.5 text-right font-black text-emerald-900 bg-emerald-50/50">{currencySymbol}{r.net_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td className="p-2.5 text-center font-bold text-slate-800">{r.next_due_date}</td>
-                    <td className="p-2.5 font-sans text-slate-500">{r.received_by}</td>
+                  <tr key={r.id} className="hover:bg-slate-50 transition">
+                    <td className="p-2.5 whitespace-nowrap text-slate-600 border-r border-slate-100">{r.entry_date}</td>
+                    <td className="p-2.5 font-bold text-emerald-700 border-r border-slate-100">{r.inv_no}</td>
+                    <td className="p-2.5 font-sans font-bold text-slate-900 border-r border-slate-100">{r.customer_name}</td>
+                    <td className="p-2.5 text-center font-sans border-r border-slate-100"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.customer_type === 'FTTH' ? 'bg-blue-100 text-blue-900' : 'bg-purple-100 text-purple-900'}`}>{r.customer_type}</span></td>
+                    <td className="p-2.5 font-sans text-slate-700 border-r border-slate-100">{r.category}</td>
+                    <td className="p-2.5 text-right font-bold text-slate-900 bg-slate-50 border-r border-slate-100">{currencySymbol}{r.gross_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td className="p-2.5 text-center font-sans font-bold text-slate-700 border-r border-slate-100">{r.is_vat_exempt ? 'EXEMPT' : '7.5% VAT'}</td>
+                    <td className="p-2.5 text-right font-bold text-amber-700 bg-amber-50/50 border-r border-slate-100">{r.vat_amount > 0 ? `${currencySymbol}${r.vat_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}</td>
+                    <td className="p-2.5 text-right font-bold text-emerald-900 bg-emerald-50/50 border-r border-slate-100">{currencySymbol}{r.net_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td className="p-2.5 text-center font-bold text-slate-900 border-r border-slate-100">{r.next_due_date}</td>
+                    <td className="p-2.5 font-sans text-slate-600">{r.received_by}</td>
                   </tr>
                 ))}
+                {filteredRecords.length === 0 && <tr><td colSpan="11" className="p-8 text-center font-sans text-slate-600 font-medium">No ledger entries found.</td></tr>}
               </tbody>
               <tfoot>
                 <tr className="bg-slate-900 text-white font-bold text-right text-xs">
-                  <td colSpan="5" className="p-3 text-left font-sans">TOTAL SUMMARY</td>
+                  <td colSpan="5" className="p-3 text-left font-sans uppercase tracking-wider">TOTAL REVENUE & VAT</td>
                   <td className="p-3 text-white bg-slate-950">{currencySymbol}{totals.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                  <td></td>
+                  <td className="border-r border-slate-800"></td>
                   <td className="p-3 text-amber-400 bg-amber-950">{currencySymbol}{totals.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                   <td className="p-3 text-emerald-400 bg-emerald-950">{currencySymbol}{totals.net.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                  <td colSpan="2"></td>
+                  <td colSpan="2" className="text-left font-sans text-slate-400 text-[10px] pl-3">{filteredRecords.length} Receipts</td>
                 </tr>
               </tfoot>
             </table>
@@ -406,239 +310,135 @@ export default function Accounting() {
         </div>
       )}
 
-      {/* TAB 2: Renewal & Due Date Schedule */}
       {activeTab === 'due-register' && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-            <h3 className="font-bold text-slate-800 text-sm">Contract Expirations & Renewal Register</h3>
-            <div className="flex gap-2 text-xs">
-              <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">● Active</span>
-              <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">● Due in 7 Days</span>
-              <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded-full font-bold">● Overdue</span>
-            </div>
-          </div>
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b">
-                <th className="p-3">Customer Name</th>
-                <th className="p-3">Type</th>
-                <th className="p-3">Particulars</th>
-                <th className="p-3 font-mono">Next Due Date</th>
-                <th className="p-3 text-center">Status</th>
-                <th className="p-3 text-right">Last Gross Paid</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {dueRegisterRecords.map(r => (
-                <tr key={r.id} className="hover:bg-slate-50">
-                  <td className="p-3 font-bold text-slate-900">{r.customer_name}</td>
-                  <td className="p-3">{r.customer_type}</td>
-                  <td className="p-3 text-slate-500">{r.description}</td>
-                  <td className="p-3 font-mono font-bold text-slate-900 bg-slate-50">{r.next_due_date}</td>
-                  <td className="p-3 text-center">
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold border ${r.badgeClass}`}>
-                      {r.status} ({r.diffDays}d)
-                    </span>
-                  </td>
-                  <td className="p-3 text-right font-mono font-bold">₦{r.gross_amount.toLocaleString()}</td>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full">
+          <div className="overflow-x-auto custom-scrollbar w-full">
+            <table className="w-full text-left text-sm border-collapse min-w-[700px]">
+              <thead>
+                <tr className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200 text-xs">
+                  <th className="p-3">Customer Name</th><th className="p-3">Type</th><th className="p-3">Particulars</th><th className="p-3 font-mono">Next Due Date</th><th className="p-3 text-center">Status</th><th className="p-3 text-right">Last Gross Paid</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {dueRegisterRecords.map(r => (
+                  <tr key={r.id} className="hover:bg-slate-50 transition">
+                    <td className="p-3 font-bold text-slate-900">{r.customer_name}</td>
+                    <td className="p-3 font-bold text-slate-700 text-[10px] uppercase">{r.customer_type}</td>
+                    <td className="p-3 text-xs text-slate-600">{r.description}</td>
+                    <td className="p-3 font-mono font-bold text-slate-900 bg-slate-50">{r.next_due_date}</td>
+                    <td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-[10px] font-bold border ${r.badgeClass}`}>{r.status} ({r.diffDays}d)</span></td>
+                    <td className="p-3 text-right font-mono font-bold text-slate-900">₦{r.gross_amount.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* TAB 3: Monthly Revenue & VAT Summary */}
       {activeTab === 'monthly' && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6">
-          <div className="flex justify-between items-center border-b pb-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 w-full overflow-hidden">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-4 mb-6 gap-4">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">VOIX NETWORKS - Monthly Income & FIRS Tax Report</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Selected Month: {selectedMonth}</p>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900">Monthly Income & Tax Report</h2>
+              <p className="text-xs text-slate-600 mt-0.5">Selected Month: <span className="font-bold">{selectedMonth}</span></p>
             </div>
-            <select
-              value={selectedMonth}
-              onChange={e => setSelectedMonth(e.target.value)}
-              className="px-3 py-1.5 text-sm font-bold border rounded-lg"
-            >
+            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="w-full sm:w-auto px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg text-slate-900 bg-slate-50">
               {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
-
-          <table className="w-full text-left text-sm border-collapse">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-y">
-                <th className="p-3">Head #</th>
-                <th className="p-3">Income Stream Category</th>
-                <th className="p-3 text-center">Count</th>
-                <th className="p-3 text-right">Gross Total (₦)</th>
-                <th className="p-3 text-right text-amber-700">7.5% VAT (₦)</th>
-                <th className="p-3 text-right font-black">Net Income (₦)</th>
-                <th className="p-3 text-right">% Share</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {monthlySummaryData.categoryBreakdown.map(item => (
-                <tr key={item.id} className="hover:bg-slate-50">
-                  <td className="p-3 font-mono text-slate-500 font-bold">{item.id}</td>
-                  <td className="p-3 font-bold text-slate-900">{item.category}</td>
-                  <td className="p-3 text-center font-mono">{item.count}</td>
-                  <td className="p-3 text-right font-mono">₦{item.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                  <td className="p-3 text-right font-mono font-bold text-amber-700">₦{item.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                  <td className="p-3 text-right font-mono font-bold text-emerald-900">₦{item.net.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                  <td className="p-3 text-right font-mono">{item.percentage}%</td>
+          <div className="overflow-x-auto custom-scrollbar w-full">
+            <table className="w-full text-left text-sm border-collapse min-w-[700px]">
+              <thead>
+                <tr className="bg-slate-100 text-slate-800 font-bold border-y border-slate-200 text-xs">
+                  <th className="p-3">Stream Category</th><th className="p-3 text-center">Count</th><th className="p-3 text-right">Gross Total (₦)</th><th className="p-3 text-right text-amber-800">7.5% VAT (₦)</th><th className="p-3 text-right font-black">Net Income (₦)</th><th className="p-3 text-right">% Share</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-slate-900 text-white font-bold text-sm">
-                <td colSpan="2" className="p-3 uppercase">TOTAL MONTHLY REVENUE</td>
-                <td className="p-3 text-center font-mono">{monthlyRecords.length}</td>
-                <td className="p-3 text-right font-mono">₦{monthlySummaryData.totalGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                <td className="p-3 text-right font-mono text-amber-400">₦{monthlySummaryData.totalVat.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                <td className="p-3 text-right font-mono text-emerald-400">₦{monthlySummaryData.totalNet.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                <td className="p-3 text-right font-mono">100.0%</td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-200 text-slate-900">
+                {monthlySummaryData.categoryBreakdown.map(item => (
+                  <tr key={item.id} className="hover:bg-slate-50 transition">
+                    <td className="p-3 font-bold">{item.category}</td>
+                    <td className="p-3 text-center font-mono text-slate-600">{item.count}</td>
+                    <td className="p-3 text-right font-mono font-medium">₦{item.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td className="p-3 text-right font-mono font-bold text-amber-700">₦{item.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td className="p-3 text-right font-mono font-bold text-emerald-800">₦{item.net.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td className="p-3 text-right font-mono font-bold text-slate-500">{item.percentage}%</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-900 text-white font-bold text-sm">
+                  <td className="p-3 uppercase text-xs">TOTAL MONTHLY REVENUE</td>
+                  <td className="p-3 text-center font-mono">{monthlyRecords.length}</td>
+                  <td className="p-3 text-right font-mono">₦{monthlySummaryData.totalGross.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td className="p-3 text-right font-mono text-amber-400">₦{monthlySummaryData.totalVat.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td className="p-3 text-right font-mono text-emerald-400">₦{monthlySummaryData.totalNet.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td className="p-3 text-right font-mono">100.0%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* Post Income Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-200">
-              <h3 className="font-bold text-slate-900 text-base">Post Income Payment Receipt</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
-            </div>
-
-            <form onSubmit={handleAddIncome} className="space-y-4 mt-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-semibold text-slate-600 mb-1 block">Payment Date</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.date}
-                    onChange={e => setFormData({...formData, date: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="font-semibold text-slate-600 mb-1 block">Invoice #</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.invNo}
-                    onChange={e => setFormData({...formData, invNo: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-lg font-mono"
-                  />
-                </div>
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Post Income Payment Receipt</h3>
+            <form onSubmit={handleAddIncome} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Payment Date</label><input type="date" required value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-slate-50 text-slate-900" /></div>
+                <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Invoice / Receipt #</label><input type="text" required value={formData.invNo} onChange={e => setFormData({...formData, invNo: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono font-bold bg-slate-50 text-slate-900" /></div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="font-semibold text-slate-600 mb-1 block">Customer Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Zenith Tech Park"
-                    value={formData.customerName}
-                    onChange={e => setFormData({...formData, customerName: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-lg font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="font-semibold text-slate-600 mb-1 block">Customer Type</label>
-                  <select
-                    value={formData.customerType}
-                    onChange={e => setFormData({...formData, customerType: e.target.value})}
-                    className="w-full px-3 py-2 border rounded-lg bg-white font-bold"
-                  >
-                    <option value="FTTH">FTTH (Home)</option>
-                    <option value="Enterprise">Enterprise</option>
-                  </select>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2"><label className="text-[10px] font-bold text-slate-900 block mb-1">Customer Name</label><input type="text" required placeholder="e.g. Zenith Tech Park" value={formData.customerName} onChange={e => setFormData({...formData, customerName: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 placeholder:text-slate-400" /></div>
+                <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Customer Type</label><select value={formData.customerType} onChange={e => setFormData({...formData, customerType: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-slate-50 text-slate-900 font-bold"><option value="FTTH">FTTH (Home)</option><option value="Enterprise">Enterprise</option></select></div>
               </div>
 
-              <div>
-                <label className="font-semibold text-slate-600 mb-1 block">Category</label>
-                <select
-                  value={formData.category}
-                  onChange={e => setFormData({...formData, category: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-lg bg-white"
-                >
-                  {INCOME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Income Stream Category</label><select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-slate-50 text-slate-900 font-bold">{INCOME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
+                <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Payment Mode</label><select value={formData.paymentMode} onChange={e => setFormData({...formData, paymentMode: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-slate-50 text-slate-900 font-bold"><option value="Bank Transfer">Bank Transfer</option><option value="Card Payment">Card Payment</option><option value="Cash">Cash</option></select></div>
               </div>
 
-              <div>
-                <label className="font-semibold text-slate-600 mb-1 block">Particulars / Description</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 50Mbps Dedicated Fiber Internet"
-                  value={formData.description}
-                  onChange={e => setFormData({...formData, description: e.target.value})}
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-              </div>
+              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Particulars / Description</label><input type="text" required placeholder="e.g. 50Mbps Dedicated Fiber Internet" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 placeholder:text-slate-400" /></div>
 
-              {/* VAT Calculation Engine Box */}
               <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-amber-900">💰 7.5% Auto-VAT Calculation Engine</span>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.isVatExempt}
-                      onChange={e => setFormData({...formData, isVatExempt: e.target.checked})}
-                      className="rounded"
-                    />
-                    <span>VAT Exempt</span>
-                  </label>
+                <div className="flex justify-between items-center"><span className="text-xs font-bold text-amber-900">💰 7.5% Auto-VAT Calculation Engine</span><label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-slate-800"><input type="checkbox" checked={formData.isVatExempt} onChange={e => setFormData({...formData, isVatExempt: e.target.checked})} className="w-4 h-4 rounded text-emerald-600 border-slate-400" /><span>VAT Exempt</span></label></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Gross Amount (₦)</label><input type="number" required placeholder="0.00" value={formData.grossAmount} onChange={e => setFormData({...formData, grossAmount: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono font-bold bg-white text-slate-900 placeholder:text-slate-400" /></div>
+                  <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Calculation Type</label><select disabled={formData.isVatExempt} value={formData.vatCalculationType} onChange={e => setFormData({...formData, vatCalculationType: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white disabled:bg-slate-100 text-slate-900 font-bold"><option value="INCLUSIVE">Inclusive (7.5% Inside Total)</option><option value="EXCLUSIVE">Exclusive (+7.5% Added)</option></select></div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block mb-1 font-semibold">Amount (₦)</label>
-                    <input
-                      type="number"
-                      required
-                      placeholder="0.00"
-                      value={formData.grossAmount}
-                      onChange={e => setFormData({...formData, grossAmount: e.target.value})}
-                      className="w-full px-3 py-2 border rounded font-mono font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1 font-semibold">Calculation Type</label>
-                    <select
-                      disabled={formData.isVatExempt}
-                      value={formData.vatCalculationType}
-                      onChange={e => setFormData({...formData, vatCalculationType: e.target.value})}
-                      className="w-full px-3 py-2 border rounded bg-white"
-                    >
-                      <option value="INCLUSIVE">Inclusive (7.5% Inside Total)</option>
-                      <option value="EXCLUSIVE">Exclusive (+7.5% Added)</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-amber-200 font-mono">
-                  <div>Gross: ₦{calculatedTax.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                  <div className="text-amber-700">VAT: ₦{calculatedTax.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-amber-200 font-mono text-xs">
+                  <div className="text-slate-900 font-bold">Gross: ₦{calculatedTax.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                  <div className="text-amber-800 font-bold">VAT: ₦{calculatedTax.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                   <div className="text-emerald-800 font-bold">Net: ₦{calculatedTax.net.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                 </div>
               </div>
 
-              <div className="pt-3 border-t flex justify-end gap-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border rounded-lg">Cancel</button>
-                <button type="submit" className="px-5 py-2 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500">Post Record</button>
+              <div className="bg-blue-50 border border-blue-200 p-3.5 rounded-xl space-y-3">
+                <p className="text-xs font-bold text-blue-900">🗓️ Duration & Subscription Expiration</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-900 block mb-1">Duration Cycle</label>
+                    <select value={formData.durationMonths} onChange={e => setFormData({...formData, durationMonths: parseInt(e.target.value)})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 font-bold"><option value={1}>1 Month (Monthly)</option><option value={3}>3 Months (Quarterly)</option><option value={6}>6 Months (Bi-Annual)</option><option value={12}>12 Months (1 Year)</option><option value={0}>One-off / Non-recurring</option><option value={-1}>Custom Months</option></select>
+                  </div>
+                  {formData.durationMonths === -1 ? (
+                    <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Number of Months</label><input type="number" min="1" placeholder="e.g. 5" value={formData.customMonths} onChange={e => setFormData({...formData, customMonths: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900" /></div>
+                  ) : (
+                    <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Next Due Date (Auto)</label><input type="date" value={formData.nextDueDate || calculatedDueDate} onChange={e => setFormData({...formData, nextDueDate: e.target.value})} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono font-bold bg-white text-slate-900" /></div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition">Post Income & VAT</button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </div>
+    </ModuleLayout>
   );
 }

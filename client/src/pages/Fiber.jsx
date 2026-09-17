@@ -4,7 +4,7 @@ import ModuleLayout from '../components/layout/ModuleLayout';
 import { Users, FileText, UserPlus, SplitSquareHorizontal } from 'lucide-react';
 
 export default function Fiber() {
-  const { teams, staff, workOrders, authFetch, refreshSystemData, hasRole } = useContext(AppContext);
+  const { teams, staff, workOrders, authFetch, refreshSystemData, hasRole, user } = useContext(AppContext);
   const [activeTab, setActiveTab] = useState('teams');
   const [isTeamModal, setIsTeamModal] = useState(false);
   const [isReportModal, setIsReportModal] = useState(false);
@@ -12,7 +12,8 @@ export default function Fiber() {
   
   const [teamData, setTeamData] = useState({ name: '', leader_id: '', member_ids: [], assigned_vehicle: '' });
   const [reportData, setReportData] = useState({ 
-    work_order_id: '', time_arrived: '', splicer_name: '', closure_location_gps: '', 
+    work_order_id: '', report_date: new Date().toISOString().split('T')[0], vehicle_route: '', ticket_no: '',
+    time_arrived: '', splicer_name: '', closure_location_gps: '', 
     failure_point_desc: '', manipulations_made: '', route_segment: '', otdr_distance_meters: '', leftover_materials: ''
   });
 
@@ -20,29 +21,54 @@ export default function Fiber() {
 
   const handleCreateTeam = async (e) => {
     e.preventDefault();
-    await authFetch('/api/teams/daily', { method: 'POST', body: JSON.stringify(teamData) });
+    // Ensure the selected leader isn't also duplicated in the members array
+    const cleanMembers = teamData.member_ids.filter(id => id !== teamData.leader_id);
+    
+    await authFetch('/api/teams/daily', { 
+      method: 'POST', 
+      body: JSON.stringify({ ...teamData, member_ids: cleanMembers }) 
+    });
+    
     setIsTeamModal(false);
     refreshSystemData();
   };
 
   const handleSplitTeam = async (e) => {
     e.preventDefault();
+    
+    // 1. Remove selected members from the original team
     const originalMembers = JSON.parse(splittingTeam.member_ids || '[]');
     const remainingMembers = originalMembers.filter(id => !teamData.member_ids.includes(id));
+    
+    // 2. Ensure the promoted sub-team leader isn't listed as a standard member in the new team
+    const cleanSubTeamMembers = teamData.member_ids.filter(id => id !== teamData.leader_id);
+
+    // 3. Patch the original team, then Post the new sub-team
     await authFetch(`/api/teams/daily/${splittingTeam.id}`, { method: 'PATCH', body: JSON.stringify({ member_ids: remainingMembers }) });
-    await authFetch('/api/teams/daily', { method: 'POST', body: JSON.stringify(teamData) });
+    await authFetch('/api/teams/daily', { method: 'POST', body: JSON.stringify({ ...teamData, member_ids: cleanSubTeamMembers }) });
+    
     setSplittingTeam(null);
     refreshSystemData();
   };
 
   const handleSubmitReport = async (e) => {
     e.preventDefault();
-    await authFetch('/api/teams/fiber-report', { method: 'POST', body: {
-        ...reportData, 
-        leftover_materials: reportData.leftover_materials ? [{ itemName: reportData.leftover_materials, qty: 1 }] : []
-    } });
+    const leftovers = reportData.leftover_materials ? [{ itemName: reportData.leftover_materials, qty: 1 }] : [];
+
+    await authFetch('/api/teams/fiber-report', { 
+      method: 'POST', 
+      body: JSON.stringify({ ...reportData, leftover_materials: leftovers }) 
+    });
+
+    if (reportData.work_order_id) {
+      await authFetch(`/api/tickets/work-orders/${reportData.work_order_id}/complete`, { 
+        method: 'PATCH', 
+        body: JSON.stringify({ leftover_materials: leftovers, return_to_inventory: true }) 
+      });
+    }
+
     setIsReportModal(false);
-    alert("Fiber Restoration Report formally submitted and logged.");
+    alert("Fiber Restoration Report formally submitted. Work Order marked as fulfilled.");
     refreshSystemData();
   };
 
@@ -56,8 +82,8 @@ export default function Fiber() {
       onTabChange={setActiveTab}
       headerActions={hasRole(['HOD Fiber', 'Management', 'GM', 'Dev']) && (
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <button onClick={() => {setTeamData({ name: '', leader_id: '', member_ids: [], assigned_vehicle: '' }); setIsTeamModal(true);}} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm"><UserPlus className="w-4 h-4"/> Mobilize Team</button>
-          <button onClick={() => setIsReportModal(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm"><FileText className="w-4 h-4"/> Submit Report</button>
+          <button onClick={() => {setTeamData({ name: '', leader_id: '', member_ids: [], assigned_vehicle: '' }); setIsTeamModal(true);}} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><UserPlus className="w-4 h-4"/> Mobilize Team</button>
+          <button onClick={() => setIsReportModal(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><FileText className="w-4 h-4"/> Submit Report</button>
         </div>
       )}
     >
@@ -69,7 +95,7 @@ export default function Fiber() {
                 <div className="flex justify-between items-start mb-2">
                   <h3 className="font-bold text-slate-900 text-lg">{t.name}</h3>
                   {hasRole(['HOD Fiber', 'Management', 'GM', 'Dev']) && (
-                    <button onClick={() => { setSplittingTeam(t); setTeamData({ name: `${t.name} (Sub)`, leader_id: '', member_ids: [], assigned_vehicle: '' }); }} className="text-slate-400 hover:text-blue-600 transition p-1.5 bg-slate-50 hover:bg-blue-50 rounded" title="Split Team"><SplitSquareHorizontal className="w-5 h-5"/></button>
+                    <button onClick={() => { setSplittingTeam(t); setTeamData({ name: `${t.name} (Sub)`, leader_id: '', member_ids: [], assigned_vehicle: '' }); }} className="text-slate-500 hover:text-blue-700 transition p-1.5 bg-slate-100 hover:bg-blue-50 rounded" title="Split Team"><SplitSquareHorizontal className="w-5 h-5"/></button>
                   )}
                 </div>
                 <p className="text-[11px] sm:text-xs text-slate-500 font-mono mb-4">{t.id} • {t.assigned_vehicle}</p>
@@ -83,7 +109,7 @@ export default function Fiber() {
               </div>
             </div>
           ))}
-          {teams.length === 0 && <p className="text-slate-500 p-4">No field teams mobilized for today.</p>}
+          {teams.length === 0 && <p className="text-slate-600 font-medium p-4">No field teams mobilized for today.</p>}
         </div>
       ) : (
         <div className="bg-white p-6 sm:p-12 text-center border-2 border-dashed border-slate-200 rounded-xl text-slate-500 w-full">
@@ -97,19 +123,33 @@ export default function Fiber() {
       {isTeamModal && !splittingTeam && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <h3 className="font-bold text-lg mb-4 border-b pb-2">Mobilize Daily Team</h3>
+            <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Mobilize Daily Team</h3>
             <form onSubmit={handleCreateTeam} className="space-y-4">
-              <input type="text" required placeholder="Team Name (e.g. Wuse Alpha Team)" onChange={e => setTeamData({...teamData, name: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
-              <input type="text" required placeholder="Assigned Vehicle" onChange={e => setTeamData({...teamData, assigned_vehicle: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
-              <select required onChange={e => setTeamData({...teamData, leader_id: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50 font-bold"><option value="">Select Appointed Team Leader...</option>{fiberStaff.map(s => <option key={s.id} value={s.id}>{s.fullname}</option>)}</select>
               <div>
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 block mb-1">Select Splicers & Engineers</label>
-                <p className="text-[9px] text-slate-400 mb-1 leading-tight">Hold Ctrl (Windows) or Cmd (Mac) to select multiple members.</p>
-                <select multiple onChange={e => setTeamData({...teamData, member_ids: Array.from(e.target.selectedOptions, option => option.value)})} className="w-full border p-2.5 rounded-lg text-sm bg-white h-32">{fiberStaff.map(s => <option key={s.id} value={s.id}>{s.fullname}</option>)}</select>
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Team Name</label>
+                <input type="text" required placeholder="Team Name (e.g. Wuse Alpha Team)" onChange={e => setTeamData({...teamData, name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
               </div>
-              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t mt-2">
-                <button type="button" onClick={() => setIsTeamModal(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg text-sm font-bold w-full sm:w-auto transition shadow-sm">Cancel</button>
-                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm w-full sm:w-auto">Mobilize Team</button>
+              <div>
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Assigned Vehicle</label>
+                <input type="text" required placeholder="Assigned Vehicle" onChange={e => setTeamData({...teamData, assigned_vehicle: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
+              </div>
+              <div>
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Team Leader</label>
+                <select required onChange={e => setTeamData({...teamData, leader_id: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold">
+                  <option value="">Select Appointed Team Leader...</option>
+                  {fiberStaff.map(s => <option key={s.id} value={s.id}>{s.fullname}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Select Splicers & Engineers</label>
+                <p className="text-[9px] text-slate-500 mb-1 leading-tight">Hold Ctrl (Windows) or Cmd (Mac) to select multiple members.</p>
+                <select multiple onChange={e => setTeamData({...teamData, member_ids: Array.from(e.target.selectedOptions, option => option.value)})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 h-32">
+                  {fiberStaff.map(s => <option key={s.id} value={s.id}>{s.fullname}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
+                <button type="button" onClick={() => setIsTeamModal(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold shadow-sm w-full sm:w-auto transition">Mobilize Team</button>
               </div>
             </form>
           </div>
@@ -120,25 +160,39 @@ export default function Fiber() {
       {splittingTeam && (
          <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar">
-           <h3 className="font-bold text-lg mb-2 border-b pb-2">Split Team: {splittingTeam.name}</h3>
-           <p className="text-[11px] sm:text-xs text-slate-500 mb-4">Select members to detach and form a new temporary sub-team.</p>
+           <h3 className="font-bold text-lg mb-2 border-b border-slate-200 pb-2 text-slate-900">Split Team: {splittingTeam.name}</h3>
+           <p className="text-[11px] sm:text-xs text-slate-600 mb-4 font-medium">Select members to detach and form a new temporary sub-team.</p>
            <form onSubmit={handleSplitTeam} className="space-y-4">
-             <input type="text" required placeholder="New Sub-Team Name" value={teamData.name} onChange={e => setTeamData({...teamData, name: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
-             <input type="text" required placeholder="Assigned Vehicle / Transport" onChange={e => setTeamData({...teamData, assigned_vehicle: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
-             
              <div>
-               <label className="text-[10px] sm:text-xs font-bold text-slate-600 block mb-1">Members to Detach</label>
-               <select multiple required onChange={e => setTeamData({...teamData, member_ids: Array.from(e.target.selectedOptions, option => option.value)})} className="w-full border p-2.5 rounded-lg text-sm bg-white h-24">{JSON.parse(splittingTeam.member_ids || '[]').map(mId => <option key={mId} value={mId}>{staff.find(s => s.id === mId)?.fullname || mId}</option>)}</select>
+               <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">New Sub-Team Name</label>
+               <input type="text" required placeholder="New Sub-Team Name" value={teamData.name} onChange={e => setTeamData({...teamData, name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
+             </div>
+             <div>
+               <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Assigned Vehicle</label>
+               <input type="text" required placeholder="Assigned Vehicle / Transport" onChange={e => setTeamData({...teamData, assigned_vehicle: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
              </div>
              
-             <select required onChange={e => setTeamData({...teamData, leader_id: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50 font-bold">
-               <option value="">Promote Sub-Team Leader...</option>
-               {teamData.member_ids.map(mId => <option key={mId} value={mId}>{staff.find(s => s.id === mId)?.fullname || mId}</option>)}
-             </select>
+             <div>
+               <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Members to Detach</label>
+               <p className="text-[9px] text-slate-500 mb-1 leading-tight">Hold Ctrl (Windows) or Cmd (Mac) to select multiple members.</p>
+               <select multiple required onChange={e => setTeamData({...teamData, member_ids: Array.from(e.target.selectedOptions, option => option.value)})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 h-24">
+                 {JSON.parse(splittingTeam.member_ids || '[]').map(mId => (
+                   <option key={mId} value={mId}>{staff.find(s => s.id === mId)?.fullname || mId}</option>
+                 ))}
+               </select>
+             </div>
+             
+             <div>
+               <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Sub-Team Leader</label>
+               <select required onChange={e => setTeamData({...teamData, leader_id: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold">
+                 <option value="">Promote Sub-Team Leader...</option>
+                 {teamData.member_ids.map(mId => <option key={mId} value={mId}>{staff.find(s => s.id === mId)?.fullname || mId}</option>)}
+               </select>
+             </div>
 
-             <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t mt-2">
-               <button type="button" onClick={() => setSplittingTeam(null)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg text-sm font-bold w-full sm:w-auto transition shadow-sm">Cancel</button>
-               <button type="submit" className="px-4 py-2.5 sm:py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm w-full sm:w-auto">Split & Mobilize</button>
+             <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
+               <button type="button" onClick={() => setSplittingTeam(null)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+               <button type="submit" className="px-4 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold shadow-sm w-full sm:w-auto transition">Split & Mobilize</button>
              </div>
            </form>
          </div>
@@ -149,52 +203,77 @@ export default function Fiber() {
       {isReportModal && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <h3 className="font-bold text-lg sm:text-xl border-b border-slate-200 pb-3 mb-4 sm:mb-5">Daily Fiber Restoration & Splicing Report</h3>
+            <h3 className="font-bold text-lg sm:text-xl border-b border-slate-200 pb-3 mb-4 sm:mb-5 text-slate-900">Daily Fiber Restoration & Splicing Report</h3>
             <form onSubmit={handleSubmitReport} className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              
               <div className="sm:col-span-2">
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 mb-1 block">Associated Work Order</label>
-                <select required onChange={e => setReportData({...reportData, work_order_id: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50">
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Associated Work Order</label>
+                <select required onChange={e => {
+                  const wo = workOrders.find(w => w.id === e.target.value);
+                  setReportData({...reportData, work_order_id: e.target.value, ticket_no: wo?.ticket_id || ''});
+                }} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold">
                   <option value="">Select Work Order...</option>
                   {workOrders.filter(w => w.status !== 'Closed').map(w => <option key={w.id} value={w.id}>{w.id} - {w.objective}</option>)}
                 </select>
               </div>
+
+              <div>
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Report Date</label>
+                <input type="date" required value={reportData.report_date} onChange={e => setReportData({...reportData, report_date: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900" />
+              </div>
+              <div>
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Team Lead</label>
+                <input type="text" readOnly value={user?.fullname || 'System User'} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-200 text-slate-600 font-bold" />
+              </div>
               
               <div>
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 mb-1 block">Time Arrived</label>
-                <input type="text" required placeholder="e.g. 08:45 AM" onChange={e => setReportData({...reportData, time_arrived: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Assigned Vehicle/Route</label>
+                <input type="text" required placeholder="e.g. Route A / Hilux 2" onChange={e => setReportData({...reportData, vehicle_route: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
               </div>
               <div>
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 mb-1 block">Splicer Responsible</label>
-                <input type="text" required placeholder="Exact Technician Name" onChange={e => setReportData({...reportData, splicer_name: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Restoration Ticket No.</label>
+                <input type="text" required placeholder="Ticket No" value={reportData.ticket_no} onChange={e => setReportData({...reportData, ticket_no: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold placeholder-slate-500" />
               </div>
-              <div className="sm:col-span-2">
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 mb-1 block">Closure Location & GPS / Identifier</label>
-                <input type="text" required placeholder="e.g. Manhole 12, Wuse Zone 5" onChange={e => setReportData({...reportData, closure_location_gps: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 mb-1 block">Failure Point Description</label>
-                <input type="text" required placeholder="e.g. Total fiber cut / High loss on Core 4" onChange={e => setReportData({...reportData, failure_point_desc: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 mb-1 block">Manipulations & Changes Made</label>
-                <textarea required placeholder="e.g. Spliced cores 1-12..." onChange={e => setReportData({...reportData, manipulations_made: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50 h-20" />
+              
+              <div>
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Time Arrived</label>
+                <input type="text" required placeholder="e.g. 08:45 AM" onChange={e => setReportData({...reportData, time_arrived: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
               </div>
               <div>
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 mb-1 block">Route Segment</label>
-                <input type="text" required placeholder="e.g. Node A to Wuse Hub" onChange={e => setReportData({...reportData, route_segment: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Splicer Responsible</label>
+                <input type="text" required placeholder="Exact Technician Name" onChange={e => setReportData({...reportData, splicer_name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
               </div>
-              <div>
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 mb-1 block">OTDR Distance to Cut (m)</label>
-                <input type="number" required placeholder="1452" onChange={e => setReportData({...reportData, otdr_distance_meters: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50 font-mono" />
+
+              <div className="sm:col-span-2">
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Closure Location & GPS / Identifier</label>
+                <input type="text" required placeholder="e.g. Manhole 12, Wuse Zone 5" onChange={e => setReportData({...reportData, closure_location_gps: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
               </div>
               <div className="sm:col-span-2">
-                <label className="text-[10px] sm:text-xs font-bold text-slate-600 mb-1 block">Leftover Materials (Optional)</label>
-                <input type="text" placeholder="e.g. 10m drop cable, 2 splices" onChange={e => setReportData({...reportData, leftover_materials: e.target.value})} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Failure Point Description</label>
+                <input type="text" required placeholder="e.g. Total fiber cut / High loss on Core 4" onChange={e => setReportData({...reportData, failure_point_desc: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Manipulations & Changes Made</label>
+                <textarea required placeholder="e.g. Spliced cores 1-12; replaced damaged tray..." onChange={e => setReportData({...reportData, manipulations_made: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 h-20 placeholder-slate-500" />
+              </div>
+
+              <div>
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Route Segment</label>
+                <input type="text" required placeholder="e.g. Node A to Wuse Hub" onChange={e => setReportData({...reportData, route_segment: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
+              </div>
+              <div>
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">OTDR Distance to Cut (m)</label>
+                <input type="number" required placeholder="1452" onChange={e => setReportData({...reportData, otdr_distance_meters: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-mono placeholder-slate-500" />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-[10px] sm:text-xs font-bold text-slate-900 mb-1 block">Leftover Materials (Optional)</label>
+                <input type="text" placeholder="e.g. 10m drop cable, 2 splices" onChange={e => setReportData({...reportData, leftover_materials: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" />
               </div>
               
               <div className="sm:col-span-2 flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-4 sm:pt-5 border-t border-slate-200 mt-2">
-                <button type="button" onClick={() => setIsReportModal(false)} className="px-5 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg text-sm font-bold w-full sm:w-auto transition shadow-sm">Cancel</button>
-                <button type="submit" className="px-5 py-2.5 sm:py-2 bg-emerald-600 text-white font-bold hover:bg-emerald-500 rounded-lg shadow-sm w-full sm:w-auto">Submit Official Document</button>
+                <button type="button" onClick={() => setIsReportModal(false)} className="px-5 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="submit" className="px-5 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-sm w-full sm:w-auto transition">Submit Official Document</button>
               </div>
             </form>
           </div>
