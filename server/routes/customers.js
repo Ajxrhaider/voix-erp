@@ -91,8 +91,8 @@ router.patch('/:id/payment', authenticateToken, (req, res) => {
   // Distribute Notification to Management & Accounting
   const oversightTeam = db.prepare(`SELECT id FROM users WHERE roles LIKE '%"Management"%' OR roles LIKE '%"Accounting"%' OR roles LIKE '%"GM"%'`).all();
   oversightTeam.forEach(staff => {
-    db.prepare(`INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, 'Payment')`)
-      .run(staff.id, 'Subscription Payment Received', `₦${parseFloat(amount_paid).toLocaleString()} logged for ${cust.name}`);
+    db.prepare(`INSERT INTO notifications (id, user_id, title, message, type, is_read) VALUES (?, ?, ?, ?, 'Payment', 0)`)
+      .run(generateId('notif', 'NOT'), staff.id, 'Subscription Payment Received', `₦${parseFloat(amount_paid).toLocaleString()} logged for ${cust.name}`);
   });
 
   req.io.emit('erp-data-changed');
