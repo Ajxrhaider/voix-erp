@@ -7,7 +7,7 @@ export default function Deployments() {
   const { deployments, authFetch, refreshSystemData, hasRole } = useContext(AppContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
-    customer_name: '', date_of_payment: '', amount: '', phone: '', priority: 'Medium',
+    customer_name: '', date_of_payment: '', amount: '', phone: '', priority: 'P1',
     location: '', customer_type: 'FTTH', plan: 'Standard 50Mbps', start_date: '', end_date: '', sales_made_by: '', notes: ''
   });
 
@@ -46,7 +46,11 @@ export default function Deployments() {
                 <td className="p-3 font-bold text-slate-900 whitespace-nowrap">{d.customer_name}</td>
                 <td className="p-3 text-xs text-slate-700 min-w-[200px]">{d.location}</td>
                 <td className="p-3 text-center font-bold text-xs"><span className={`px-2 py-0.5 rounded ${d.customer_type === 'Enterprise' ? 'bg-purple-100 text-purple-900' : 'bg-slate-200 text-slate-800'}`}>{d.customer_type}</span></td>
-                <td className="p-3 text-center font-bold text-xs text-amber-700">{d.priority || 'Medium'}</td>
+                <td className="p-3 text-center font-bold text-[11px] whitespace-nowrap">
+                  <span className={`px-2 py-0.5 rounded ${d.priority?.includes('P0') || d.priority === 'High' ? 'bg-red-100 text-red-900' : d.priority?.includes('P10') || d.priority === 'Low' ? 'bg-slate-100 text-slate-700' : 'bg-amber-100 text-amber-900'}`}>
+                    {d.priority || 'P1'}
+                  </span>
+                </td>
                 <td className="p-3 text-center font-bold text-xs"><span className={`px-2 py-1 rounded ${d.status === 'Completed' ? 'bg-green-100 text-green-900' : 'bg-slate-100 text-slate-800'}`}>{d.status}</span></td>
               </tr>
             ))}
@@ -67,7 +71,18 @@ export default function Deployments() {
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Amount Paid (₦)</label><input type="number" required placeholder="Amount (₦)" onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-500 font-mono font-bold" /></div>
               
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Phone Number</label><input type="text" required placeholder="Phone Number" onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
-              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Priority Level</label><select onChange={e => setFormData({...formData, priority: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold"><option>Medium</option><option>High</option><option>Low</option></select></div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-900 block mb-1">Priority Level</label>
+                <select onChange={e => setFormData({...formData, priority: e.target.value})} value={formData.priority} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold">
+                  <option value="P0 (Critical)">P0 (Critical)</option>
+                  <option value="P1">P1</option>
+                  <option value="P2">P2</option>
+                  <option value="P10 (Low)">P10 (Low)</option>
+                  <option value="High">High (Legacy)</option>
+                  <option value="Medium">Medium (Legacy)</option>
+                  <option value="Low">Low (Legacy)</option>
+                </select>
+              </div>
               
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Customer Type</label><select onChange={e => setFormData({...formData, customer_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold"><option>FTTH</option><option>Enterprise</option></select></div>
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Service Plan</label><input type="text" required placeholder="Service Plan" onChange={e => setFormData({...formData, plan: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>

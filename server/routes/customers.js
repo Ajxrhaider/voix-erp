@@ -75,7 +75,7 @@ router.post('/bulk-import', authenticateToken, upload.single('file'), (req, res)
   }
 });
 
-// Update Customer Balances via Customer Service "Record Payment" Tool
+// Update Customer Balances & Trigger Notification
 router.patch('/:id/payment', authenticateToken, (req, res) => {
   const { amount_paid, last_payment_date, next_due_date } = req.body;
   const cust = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(req.params.id);
@@ -84,11 +84,19 @@ router.patch('/:id/payment', authenticateToken, (req, res) => {
   const newAmountPaid = (parseFloat(cust.amount_paid) || 0) + parseFloat(amount_paid);
   const newBalance = Math.max(0, (parseFloat(cust.outstanding_balance) || 0) - parseFloat(amount_paid));
 
+  // Update profile
   db.prepare(`UPDATE customers SET amount_paid = ?, outstanding_balance = ?, last_payment_date = ?, next_due_date = ?, status = 'Active' WHERE id = ?`)
     .run(newAmountPaid, newBalance, last_payment_date, next_due_date, req.params.id);
 
+  // Distribute Notification to Management & Accounting
+  const oversightTeam = db.prepare(`SELECT id FROM users WHERE roles LIKE '%"Management"%' OR roles LIKE '%"Accounting"%' OR roles LIKE '%"GM"%'`).all();
+  oversightTeam.forEach(staff => {
+    db.prepare(`INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, 'Payment')`)
+      .run(staff.id, 'Subscription Payment Received', `₦${parseFloat(amount_paid).toLocaleString()} logged for ${cust.name}`);
+  });
+
   req.io.emit('erp-data-changed');
-  res.json({ message: 'Payment recorded and profile updated.' });
+  res.json({ message: 'Payment recorded, profile updated, and notifications dispatched.' });
 });
 
 export default router;
