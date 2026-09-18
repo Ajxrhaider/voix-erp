@@ -63,7 +63,7 @@ export default function WorkOrders() {
           const mats = JSON.parse(wo.assigned_materials || '[]');
           
           return (
-            <div key={wo.id} className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <div key={wo.id} className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition">
               <div>
                 <div className="flex flex-wrap justify-between items-start mb-2 gap-2">
                   <p className="font-mono text-[11px] sm:text-xs font-bold text-slate-600">{wo.id}</p>
@@ -71,7 +71,7 @@ export default function WorkOrders() {
                 </div>
                 <h3 className="font-bold text-slate-900 text-base sm:text-lg mb-1 leading-tight">{wo.objective}</h3>
                 <p className="text-xs sm:text-sm text-slate-800 font-medium"><strong>Location:</strong> {wo.location}</p>
-                <p className="text-[11px] sm:text-xs text-slate-600 mt-2 font-bold">Assigned Team: {team ? team.name : wo.team_id}</p>
+                <p className="text-[11px] sm:text-xs text-slate-700 mt-2 font-bold">Assigned Team: {team ? team.name : wo.team_id}</p>
                 
                 {mats.length > 0 && (
                   <div className="mt-4 bg-blue-50 border border-blue-200 p-2.5 sm:p-3 rounded-lg w-full overflow-x-auto custom-scrollbar">
@@ -98,7 +98,7 @@ export default function WorkOrders() {
       {/* Materials Requisition Modal */}
       {isMatReqModalOpen && activeWO && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-base sm:text-lg border-b border-slate-200 pb-2 mb-4 leading-tight text-slate-900">Requisition Materials for {activeWO.id}</h3>
             <form onSubmit={handleSubmitReq} className="space-y-4">
               <div>
@@ -121,7 +121,7 @@ export default function WorkOrders() {
                   <ul className="mt-4 text-[11px] sm:text-xs space-y-1.5 font-mono text-slate-900 bg-white p-2 rounded border border-slate-200">
                     {reqData.materials_list.map((m, i) => (
                       <li key={i} className="flex justify-between items-center border-b border-slate-100 pb-1.5 pt-1">
-                        <span className="font-bold">{m.itemName} <span className="text-blue-700 bg-blue-50 px-1.5 rounded">x{m.qty}</span></span>
+                        <span className="font-bold">{m.itemName} <span className="text-blue-800 bg-blue-50 px-1.5 rounded">x{m.qty}</span></span>
                         <button type="button" onClick={() => handleRemoveFromCart(setReqData, reqData, 'materials_list', i)} className="text-red-600 hover:text-red-800 bg-red-50 p-1.5 rounded transition"><Trash2 className="w-3.5 h-3.5"/></button>
                       </li>
                     ))}
@@ -141,7 +141,7 @@ export default function WorkOrders() {
       {/* Fulfill Work Order Modal */}
       {isFulfillModalOpen && activeWO && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-base sm:text-lg border-b border-slate-200 pb-2 mb-4 text-slate-900">Complete Work Order {activeWO.id}</h3>
             <form onSubmit={handleFulfill} className="space-y-4">
               
