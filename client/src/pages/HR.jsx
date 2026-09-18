@@ -71,14 +71,14 @@ export default function HR() {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto w-full">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto custom-scrollbar w-full">
         <table className="w-full text-left text-sm min-w-[700px]">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="p-3 text-slate-800">Staff ID</th>
-              <th className="p-3 text-slate-800">Name & Email</th>
-              <th className="p-3 text-slate-800">Assigned Roles</th>
-              <th className="p-3 text-right text-slate-800">Action</th>
+              <th className="p-3 text-slate-900 font-bold">Staff ID</th>
+              <th className="p-3 text-slate-900 font-bold">Name & Email</th>
+              <th className="p-3 text-slate-900 font-bold">Assigned Roles</th>
+              <th className="p-3 text-right text-slate-900 font-bold">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -112,7 +112,7 @@ export default function HR() {
             <h3 className="font-bold text-lg mb-4 text-slate-900 border-b border-slate-200 pb-2">Edit Roles for {editingRolesFor.fullname}</h3>
             <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-300 h-48 overflow-y-auto custom-scrollbar">
               {AVAILABLE_ROLES.map(role => (
-                <label key={role} className="flex items-center gap-2 text-[11px] sm:text-xs font-bold text-slate-800 cursor-pointer">
+                <label key={role} className="flex items-center gap-2 text-[11px] sm:text-xs font-bold text-slate-900 cursor-pointer">
                   <input type="checkbox" checked={(editingRolesFor.roles || []).includes(role)}
                     onChange={() => {
                       const roles = editingRolesFor.roles || [];
@@ -135,16 +135,16 @@ export default function HR() {
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Register New Staff</h3>
             <form onSubmit={handleRegister} className="space-y-4">
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-700">Full Name</label><input type="text" required placeholder="Full Name" onChange={e => setFormData({...formData, fullname: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-700">Username</label><input type="text" required placeholder="Username" onChange={e => setFormData({...formData, username: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-700">Email Address</label><input type="email" placeholder="Email Address" onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-700">Password</label><input type="password" required placeholder="Password" onChange={e => setFormData({...formData, password: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Full Name</label><input type="text" required placeholder="Full Name" onChange={e => setFormData({...formData, fullname: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Username</label><input type="text" required placeholder="Username" onChange={e => setFormData({...formData, username: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Email Address</label><input type="email" placeholder="Email Address" onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Password</label><input type="password" required placeholder="Password" onChange={e => setFormData({...formData, password: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
               
               <div className="pt-2">
-                <label className="text-[11px] sm:text-xs font-bold text-slate-800 block mb-2">Assign Operational Roles</label>
+                <label className="text-[11px] sm:text-xs font-bold text-slate-900 block mb-2">Assign Operational Roles</label>
                 <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-300 h-32 overflow-y-auto custom-scrollbar">
                   {AVAILABLE_ROLES.map(role => (
-                    <label key={role} className="flex items-center gap-2 text-[11px] sm:text-xs font-bold text-slate-800 cursor-pointer">
+                    <label key={role} className="flex items-center gap-2 text-[11px] sm:text-xs font-bold text-slate-900 cursor-pointer">
                       <input type="checkbox" checked={formData.roles.includes(role)} onChange={() => toggleRole(role)} className="rounded text-emerald-600 border-slate-400 w-4 h-4" /> {role}
                     </label>
                   ))}

@@ -35,7 +35,7 @@ export default function Sales() {
         <button onClick={() => setIsModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><Plus className="w-4 h-4"/> Log New Deal</button>
       )}
     >
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto w-full">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto custom-scrollbar w-full">
         <table className="w-full text-left text-sm min-w-[900px]">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>

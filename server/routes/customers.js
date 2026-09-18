@@ -11,7 +11,6 @@ router.get('/', authenticateToken, (req, res) => {
   res.json(db.prepare(`SELECT * FROM customers ORDER BY name ASC`).all());
 });
 
-// Fully detailed Manual Customer Creation Endpoint
 router.post('/', authenticateToken, (req, res) => {
   const {
     voix_no, name, mac_address, customer_type, payment_schedule, amount_payable,
@@ -76,26 +75,20 @@ router.post('/bulk-import', authenticateToken, upload.single('file'), (req, res)
   }
 });
 
-router.post('/:id/pay', authenticateToken, (req, res) => {
-  const { amount, description } = req.body;
+// Update Customer Balances via Customer Service "Record Payment" Tool
+router.patch('/:id/payment', authenticateToken, (req, res) => {
+  const { amount_paid, last_payment_date, next_due_date } = req.body;
   const cust = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(req.params.id);
-  
-  // Update Customer's Financial Tracking arrays
-  db.prepare(`UPDATE customers SET amount_paid = amount_paid + ?, outstanding_balance = MAX(0, outstanding_balance - ?) WHERE id = ?`).run(amount, amount, cust.id);
+  if (!cust) return res.status(404).json({ message: 'Customer not found' });
 
-  // Auto Income
-  const invNo = `INV-SUB-${Date.now().toString().slice(-4)}`;
-  const net = amount / 1.075;
-  const vat = amount - net;
-  const today = new Date().toISOString().split('T')[0];
+  const newAmountPaid = (parseFloat(cust.amount_paid) || 0) + parseFloat(amount_paid);
+  const newBalance = Math.max(0, (parseFloat(cust.outstanding_balance) || 0) - parseFloat(amount_paid));
 
-  db.prepare(`
-    INSERT INTO accounting_ledger (entry_date, inv_no, customer_name, customer_type, type, category, description, gross_amount, is_vat_exempt, vat_rate, vat_amount, net_amount, payment_mode, reference_id)
-    VALUES (?, ?, ?, ?, 'Income', 'Monthly Bandwidth Subscription', ?, ?, 0, 7.5, ?, ?, 'Bank Transfer', ?)
-  `).run(today, invNo, cust.name, cust.customer_type, description, amount, vat, net, cust.id);
-  
+  db.prepare(`UPDATE customers SET amount_paid = ?, outstanding_balance = ?, last_payment_date = ?, next_due_date = ?, status = 'Active' WHERE id = ?`)
+    .run(newAmountPaid, newBalance, last_payment_date, next_due_date, req.params.id);
+
   req.io.emit('erp-data-changed');
-  res.json({ message: 'Payment recorded and Ledger updated' });
+  res.json({ message: 'Payment recorded and profile updated.' });
 });
 
 export default router;
