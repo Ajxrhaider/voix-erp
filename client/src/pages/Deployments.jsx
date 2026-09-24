@@ -47,7 +47,7 @@ export default function Deployments() {
                 <td className="p-3 text-xs text-slate-700 min-w-[200px]">{d.location}</td>
                 <td className="p-3 text-center font-bold text-xs"><span className={`px-2 py-0.5 rounded ${d.customer_type === 'Enterprise' ? 'bg-purple-100 text-purple-900' : 'bg-slate-200 text-slate-800'}`}>{d.customer_type}</span></td>
                 <td className="p-3 text-center font-bold text-[11px] whitespace-nowrap">
-                  <span className={`px-2 py-0.5 rounded ${d.priority?.includes('P0') || d.priority === 'High' ? 'bg-red-100 text-red-900' : d.priority?.includes('P10') || d.priority === 'Low' ? 'bg-slate-200 text-slate-900' : 'bg-amber-100 text-amber-900'}`}>
+                  <span className={`px-2 py-0.5 rounded ${d.priority?.includes('P0') || d.priority === 'High' ? 'bg-red-100 text-red-900' : d.priority?.includes('P10') || d.priority === 'Low' ? 'bg-slate-200 text-slate-800' : 'bg-amber-100 text-amber-900'}`}>
                     {d.priority || 'P1'}
                   </span>
                 </td>
@@ -67,7 +67,7 @@ export default function Deployments() {
               <div className="md:col-span-2"><label className="text-[10px] font-bold text-slate-900 block mb-1">Customer Name</label><input type="text" required placeholder="Customer Name" onChange={e => setFormData({...formData, customer_name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               <div className="md:col-span-2"><label className="text-[10px] font-bold text-slate-900 block mb-1">Exact Address / Location</label><input type="text" required placeholder="Exact Address / Location" onChange={e => setFormData({...formData, location: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               
-              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Date of Payment</label><input type="date" required onChange={e => setFormData({...formData, date_of_payment: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900" /></div>
+              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Date of Payment</label><input type="date" required onChange={e => setFormData({...formData, date_of_payment: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900" /></div>
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Amount Paid (₦)</label><input type="number" required placeholder="Amount (₦)" onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder-slate-400 font-mono font-bold" /></div>
               
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Phone Number</label><input type="text" required placeholder="Phone Number" onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
@@ -78,17 +78,17 @@ export default function Deployments() {
                   <option value="P1">P1</option>
                   <option value="P2">P2</option>
                   <option value="P10 (Low)">P10 (Low)</option>
-                  <option value="High">High (Legacy)</option>
-                  <option value="Medium">Medium (Legacy)</option>
-                  <option value="Low">Low (Legacy)</option>
+                  <option value="High">High (Legacy Fallback)</option>
+                  <option value="Medium">Medium (Legacy Fallback)</option>
+                  <option value="Low">Low (Legacy Fallback)</option>
                 </select>
               </div>
               
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Customer Type</label><select onChange={e => setFormData({...formData, customer_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold"><option>FTTH</option><option>Enterprise</option></select></div>
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Service Plan</label><input type="text" required placeholder="Service Plan" onChange={e => setFormData({...formData, plan: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               
-              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Start Date</label><input type="date" onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900" /></div>
-              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">End Date</label><input type="date" onChange={e => setFormData({...formData, end_date: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900" /></div>
+              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Start Date</label><input type="date" onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900" /></div>
+              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">End Date</label><input type="date" onChange={e => setFormData({...formData, end_date: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900" /></div>
               
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Sales made by (Staff Name)</label><input type="text" required placeholder="Sales made by" onChange={e => setFormData({...formData, sales_made_by: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Notes / Observations</label><input type="text" placeholder="Notes / Observations" onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>

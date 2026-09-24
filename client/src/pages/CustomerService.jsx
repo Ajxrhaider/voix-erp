@@ -1,19 +1,26 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { AppContext } from '../context/AppContext';
 import ModuleLayout from '../components/layout/ModuleLayout';
-import { Headset, Plus, AlertTriangle, FileText, Printer, Trash2 } from 'lucide-react';
+import { Headset, Plus, AlertTriangle, FileText, Printer, Trash2, CreditCard } from 'lucide-react';
 
 export default function CustomerService() {
   const { tickets, customers, authFetch, refreshSystemData, hasRole, user } = useContext(AppContext);
   const [activeTab, setActiveTab] = useState('queries');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [closingTicket, setClosingTicket] = useState(null);
   const [ccReports, setCcReports] = useState([]);
   const [viewingReport, setViewingReport] = useState(null);
   
   const [formData, setFormData] = useState({
-    date_received: '', time_received: '', customer_ip: '', customer_name: '', query_type: '',
+    date_received: new Date().toISOString().split('T')[0], time_received: '', customer_ip: '', customer_name: '', query_type: '',
     location: '', service_type: 'FTTH', description: '', whatsapp_sos_sent: false, assigned_to: '', priority: 'Medium'
+  });
+
+  const [paymentData, setPaymentData] = useState({
+    customer_id: '', customer_name: '', date: new Date().toISOString().split('T')[0], amount: '', 
+    method: 'Bank Transfer', reference: '', durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE',
+    receivedBy: user?.fullname || 'Customer Service'
   });
 
   const getInitialReportData = () => ({
@@ -99,6 +106,53 @@ export default function CustomerService() {
     return { success: data || 0, pending: 0 };
   };
 
+  // Payment Logic Engine
+  const calculatedDueDate = useMemo(() => {
+    if (!paymentData.date || paymentData.durationMonths === 0) return '';
+    const monthsToAdd = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths) || 1) : paymentData.durationMonths;
+    if (monthsToAdd <= 0) return '';
+    const d = new Date(paymentData.date);
+    if (isNaN(d.getTime())) return '';
+    d.setMonth(d.getMonth() + monthsToAdd);
+    return d.toISOString().split('T')[0];
+  }, [paymentData.date, paymentData.durationMonths, paymentData.customMonths]);
+
+  const calculatedTax = useMemo(() => {
+    const gross = parseFloat(paymentData.amount) || 0;
+    if (gross <= 0) return { gross: 0, vat: 0, net: 0 };
+    if (paymentData.isVatExempt) return { gross, vat: 0, net: gross };
+    if (paymentData.vatCalculationType === 'INCLUSIVE') {
+      const net = gross / 1.075; return { gross, vat: gross - net, net };
+    } else {
+      const vat = gross * 0.075; return { gross: gross + vat, vat, net: gross };
+    }
+  }, [paymentData.amount, paymentData.isVatExempt, paymentData.vatCalculationType]);
+
+  const handleRecordPayment = async (e) => {
+    e.preventDefault();
+    if (!paymentData.customer_id) return alert("Please select a valid customer from the dropdown list.");
+    
+    const monthsNum = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths) || 1) : paymentData.durationMonths;
+    const custType = customers.find(c => c.id === paymentData.customer_id)?.customer_type || 'FTTH';
+
+    await authFetch('/api/accounting/ledger', { method: 'POST', body: JSON.stringify({
+      entry_date: paymentData.date, inv_no: paymentData.reference || `REC-${Date.now().toString().slice(-6)}`,
+      customer_name: paymentData.customer_name, customer_type: custType, type: 'Income', category: 'Monthly Bandwidth Subscription',
+      description: `Subscription Renewal (${monthsNum} Months)`, gross_amount: calculatedTax.gross, is_vat_exempt: paymentData.isVatExempt ? 1 : 0,
+      vat_rate: paymentData.isVatExempt ? 0 : 7.5, vat_amount: calculatedTax.vat, net_amount: calculatedTax.net, payment_mode: paymentData.method,
+      duration_months: monthsNum, next_due_date: calculatedDueDate, received_by: paymentData.receivedBy, reference_id: paymentData.customer_id
+    })});
+
+    await authFetch(`/api/crm/customers/${paymentData.customer_id}/payment`, { method: 'PATCH', body: JSON.stringify({
+      amount_paid: paymentData.amount, last_payment_date: paymentData.date, next_due_date: calculatedDueDate
+    })});
+
+    setIsPaymentModalOpen(false);
+    setPaymentData({ customer_id: '', customer_name: '', date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '', durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE', receivedBy: user?.fullname || 'Customer Service' });
+    alert('Payment successfully recorded and posted to the ledger.');
+    refreshSystemData();
+  };
+
   return (
     <ModuleLayout
       title="Customer Service & Queries"
@@ -113,37 +167,118 @@ export default function CustomerService() {
       onTabChange={setActiveTab}
       headerActions={
         activeTab === 'queries' && hasRole(['NOC', 'Customer Service', 'Management', 'Dev']) && (
-          <button onClick={() => setIsModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 md:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full md:w-auto shadow-sm transition"><Plus className="w-4 h-4"/> Log New Query</button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <button onClick={() => setIsPaymentModalOpen(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><CreditCard className="w-4 h-4"/> Record Subscription Payment</button>
+            <button onClick={() => setIsModalOpen(true)} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><Plus className="w-4 h-4"/> Log New Query</button>
+          </div>
         )
       }
     >
       {/* TAB: ACTIVE QUERIES */}
       {activeTab === 'queries' && (
-        <div className="grid grid-cols-1 gap-4 w-full">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
           {tickets.filter(t => t.status !== 'Closed').map(t => (
-            <div key={t.id} className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:justify-between gap-4">
-              <div className="w-full">
-                <div className="flex items-center gap-2 mb-1">
-                  <p className="font-mono text-xs font-bold text-slate-600">{t.id} • {t.query_type || t.category}</p>
-                  {t.priority === 'High' && <span className="bg-red-100 text-red-900 px-2 py-0.5 rounded text-[10px] font-bold">URGENT</span>}
+            <div key={t.id} className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between transition hover:shadow-md">
+              <div>
+                <div className="flex items-center gap-2 mb-1 justify-between">
+                  <p className="font-mono text-[11px] sm:text-xs font-bold text-slate-600">{t.id} • {t.query_type || t.category}</p>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${t.status === 'Resolved' ? 'bg-emerald-100 text-emerald-900' : 'bg-amber-100 text-amber-900'}`}>{t.status}</span>
                 </div>
-                <h3 className="font-bold text-slate-900 text-lg">{t.customer_name}</h3>
-                <p className="text-sm text-slate-700 mt-1">{t.description}</p>
+                <h3 className="font-bold text-slate-900 text-lg mb-1 leading-tight">{t.customer_name}</h3>
+                <p className="text-sm text-slate-700">{t.description}</p>
+                <div className="text-[11px] sm:text-xs text-slate-600 mt-3 bg-slate-50 p-2 rounded-lg border border-slate-100 flex flex-wrap gap-x-4 gap-y-1">
+                  <span className="font-medium"><strong className="text-slate-800">Loc:</strong> {t.location}</span>
+                  <span className="font-medium"><strong className="text-slate-800">IP:</strong> <span className="font-mono">{t.customer_ip}</span></span>
+                  {t.priority === 'High' && <span className="font-bold text-red-700">URGENT PRIORITY</span>}
+                </div>
               </div>
-              <div className="sm:text-right border-t border-slate-200 sm:border-t-0 pt-3 sm:pt-0 mt-1 sm:mt-0 flex flex-row sm:flex-col justify-between items-center sm:items-end w-full sm:w-auto gap-2">
-                <span className="bg-amber-100 text-amber-900 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">{t.status}</span>
-                <div className="flex flex-row gap-2 mt-0 sm:mt-3 w-full sm:w-auto justify-end">
-                  {t.status !== 'Resolved' && t.status !== 'Escalated' && (
-                    <button onClick={() => handleEscalate(t.id)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-sm"><AlertTriangle className="w-3.5 h-3.5"/> Escalate</button>
-                  )}
-                  {(t.status === 'Resolved' || hasRole(['Management', 'Dev'])) && (
-                    <button onClick={() => setClosingTicket(t)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg text-xs transition shadow-sm w-full sm:w-auto">Close Query</button>
-                  )}
-                </div>
+              <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-200">
+                {t.status !== 'Resolved' && t.status !== 'Escalated' && (
+                  <button onClick={() => handleEscalate(t.id)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2.5 sm:py-2 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-sm w-full sm:w-auto"><AlertTriangle className="w-3.5 h-3.5"/> Escalate</button>
+                )}
+                {(t.status === 'Resolved' || hasRole(['Management', 'Dev'])) && (
+                  <button onClick={() => setClosingTicket(t)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 sm:py-2 rounded-lg text-xs transition shadow-sm w-full sm:w-auto">Close Query</button>
+                )}
               </div>
             </div>
           ))}
-          {tickets.filter(t => t.status !== 'Closed').length === 0 && <p className="text-slate-600 font-medium p-4">No active queries found.</p>}
+          {tickets.filter(t => t.status !== 'Closed').length === 0 && <p className="text-slate-600 font-medium p-4 col-span-2">No active queries found.</p>}
+        </div>
+      )}
+
+      {/* RECORD PAYMENT MODAL */}
+      {isPaymentModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
+            <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900 flex items-center gap-2"><CreditCard className="w-5 h-5 text-emerald-600"/> Record Subscription Payment</h3>
+            <form onSubmit={handleRecordPayment} className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="sm:col-span-2">
+                <label className="text-[10px] font-bold text-slate-900 block mb-1">Search Customer Profile</label>
+                <input list="pay-customers" required placeholder="Type customer name or Voix No..." value={paymentData.customer_name} onChange={e => {
+                  const match = customers.find(c => c.name === e.target.value || c.voix_no === e.target.value);
+                  setPaymentData({...paymentData, customer_name: e.target.value, customer_id: match ? match.id : ''});
+                }} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder-slate-400 font-bold" />
+                <datalist id="pay-customers">{customers.map(c => <option key={c.id} value={c.name}>{c.voix_no}</option>)}</datalist>
+              </div>
+
+              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Payment Date</label><input type="date" required value={paymentData.date} onChange={e => setPaymentData({...paymentData, date: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold" /></div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-900 block mb-1">Payment Method</label>
+                <select value={paymentData.method} onChange={e => setPaymentData({...paymentData, method: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold">
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Card Payment">Card Payment</option>
+                  <option value="Direct Debit">Direct Debit</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Cash">Cash</option>
+                </select>
+              </div>
+              
+              <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Reference / Receipt No.</label><input type="text" placeholder="Auto-generated if blank" value={paymentData.reference} onChange={e => setPaymentData({...paymentData, reference: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400 font-mono" /></div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-900 block mb-1">Duration Cycle</label>
+                <select value={paymentData.durationMonths} onChange={e => setPaymentData({...paymentData, durationMonths: parseInt(e.target.value)})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold">
+                  <option value={1}>1 Month (Monthly)</option>
+                  <option value={3}>3 Months (Quarterly)</option>
+                  <option value={6}>6 Months (Bi-Annual)</option>
+                  <option value={12}>12 Months (1 Year)</option>
+                  <option value={0}>One-off Payment</option>
+                  <option value={-1}>Custom Duration</option>
+                </select>
+              </div>
+
+              {paymentData.durationMonths === -1 && (
+                <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Custom Months</label><input type="number" min="1" value={paymentData.customMonths} onChange={e => setPaymentData({...paymentData, customMonths: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 font-bold" /></div>
+              )}
+
+              <div className={paymentData.durationMonths === -1 ? '' : 'sm:col-span-2'}>
+                <label className="text-[10px] font-bold text-slate-900 block mb-1">Next Due Date (Auto-Calculated)</label>
+                <input type="date" readOnly value={calculatedDueDate} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-200 text-slate-800 font-bold" />
+              </div>
+
+              <div className="sm:col-span-2 bg-amber-50 border border-amber-200 p-3.5 rounded-xl space-y-3 mt-2">
+                <div className="flex items-center justify-between"><span className="text-[11px] sm:text-xs font-bold text-amber-900">💰 Amount & Auto-VAT Engine</span><label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={paymentData.isVatExempt} onChange={e => setPaymentData({...paymentData, isVatExempt: e.target.checked})} className="rounded text-emerald-600 border-slate-400" /><span className="text-[11px] font-bold text-slate-900">VAT Exempt</span></label></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Gross Amount (₦)</label><input type="number" required placeholder="0.00" value={paymentData.amount} onChange={e => setPaymentData({...paymentData, amount: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 font-mono font-bold placeholder-slate-400" /></div>
+                  <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Calculation Type</label><select disabled={paymentData.isVatExempt} value={paymentData.vatCalculationType} onChange={e => setPaymentData({...paymentData, vatCalculationType: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white disabled:bg-slate-100 text-slate-900 font-bold"><option value="INCLUSIVE">Inclusive (7.5% Inside Total)</option><option value="EXCLUSIVE">Exclusive (+7.5% Added)</option></select></div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-amber-200 font-mono text-[10px] sm:text-xs text-slate-900 whitespace-nowrap">
+                  <div className="font-bold">Gross: ₦{calculatedTax.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                  <div className="text-amber-800 font-bold">VAT: ₦{calculatedTax.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                  <div className="text-emerald-800 font-bold">Net: ₦{calculatedTax.net.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                </div>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-[10px] font-bold text-slate-900 block mb-1">Received By</label>
+                <input type="text" required value={paymentData.receivedBy} onChange={e => setPaymentData({...paymentData, receivedBy: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 font-bold" />
+              </div>
+
+              <div className="sm:col-span-2 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
+                <button type="button" onClick={() => setIsPaymentModalOpen(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition">Post Payment</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -292,48 +427,26 @@ export default function CustomerService() {
         </div>
       )}
 
-      {/* TAB: REPORT ARCHIVES */}
-      {activeTab === 'report-history' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
-          {ccReports.map(rpt => (
-             <div key={rpt.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-emerald-400 transition cursor-pointer" onClick={() => setViewingReport(rpt)}>
-               <div>
-                 <div className="flex justify-between items-start mb-2">
-                   <p className="font-mono text-xs font-bold text-emerald-800">{rpt.report_date}</p>
-                   <span className="text-[10px] bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded font-mono font-bold">{rpt.id}</span>
-                 </div>
-                 <h4 className="font-bold text-slate-900">Rep: {rpt.fullname}</h4>
-                 <p className="text-xs text-slate-600 mt-2 truncate">Highlights: {JSON.parse(rpt.summary_json || '{}').highlights || 'N/A'}</p>
-               </div>
-               <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center text-xs font-bold text-slate-800">
-                 <span>Interactions: {JSON.parse(rpt.interaction_log || '[]').length}</span>
-                 <button className="text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-blue-100 transition"><FileText className="w-3.5 h-3.5"/> View Document</button>
-               </div>
-             </div>
-          ))}
-          {ccReports.length === 0 && <p className="text-slate-600 font-medium p-4 col-span-3">No historical reports found.</p>}
-        </div>
-      )}
-
       {/* NEW QUERY MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-3xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-3xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Log Customer Query</h3>
             <form onSubmit={handleCreateTicket} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Customer Name</label><input type="text" required placeholder="Customer Name" onChange={e => setFormData({...formData, customer_name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Date Received</label><input type="date" required onChange={e => setFormData({...formData, date_received: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900" /></div>
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Time</label><input type="text" placeholder="09:15 AM" onChange={e => setFormData({...formData, time_received: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Customer Name (Optional)</label><input type="text" placeholder="Customer Name" onChange={e => setFormData({...formData, customer_name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Date Received</label><input type="date" required value={formData.date_received} onChange={e => setFormData({...formData, date_received: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Time</label><input type="text" placeholder="e.g. 09:15 AM" onChange={e => setFormData({...formData, time_received: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               
-              <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Customer IP Number</label><input type="text" placeholder="IP Address" onChange={e => setFormData({...formData, customer_ip: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Customer IP NUMBER</label><input type="text" placeholder="IP Address" onChange={e => setFormData({...formData, customer_ip: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400 font-mono" /></div>
               <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Query Type</label><input type="text" required placeholder="Nature of Query" onChange={e => setFormData({...formData, query_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               
-              <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Location</label><input type="text" placeholder="Location" onChange={e => setFormData({...formData, location: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
-              <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Service Type</label><select onChange={e => setFormData({...formData, service_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option>FTTH</option><option>Enterprise</option></select></div>
+              <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Location</label><input type="text" required placeholder="Location" onChange={e => setFormData({...formData, location: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Service Type</label><select value={formData.service_type} onChange={e => setFormData({...formData, service_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option>FTTH</option><option>Enterprise</option></select></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Priority</label><select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option>Low</option><option>Medium</option><option>High</option></select></div>
               
-              <div className="sm:col-span-2 md:col-span-4"><label className="text-[10px] font-bold block mb-1 text-slate-900">Issue Description</label><textarea required placeholder="Detailed Issue Description" onChange={e => setFormData({...formData, description: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg h-24 bg-white text-slate-900 placeholder-slate-400" /></div>
+              <div className="sm:col-span-2 md:col-span-4"><label className="text-[10px] font-bold block mb-1 text-slate-900">Issue Description (Customer's Words OR ERROR Message)</label><textarea required placeholder="Detailed Issue Description" onChange={e => setFormData({...formData, description: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg h-24 bg-white text-slate-900 placeholder-slate-400" /></div>
               
-              <div className="sm:col-span-2 flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-300"><input type="checkbox" onChange={e => setFormData({...formData, whatsapp_sos_sent: e.target.checked})} className="w-5 h-5 sm:w-4 sm:h-4 rounded text-emerald-600"/> <label className="text-[11px] font-bold text-slate-900">WhatsApp SOS Sent</label></div>
+              <div className="sm:col-span-2 flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-300"><input type="checkbox" checked={formData.whatsapp_sos_sent} onChange={e => setFormData({...formData, whatsapp_sos_sent: e.target.checked})} className="w-5 h-5 sm:w-4 sm:h-4 rounded text-emerald-600 border-slate-400"/> <label className="text-[11px] font-bold text-slate-900">WhatsApp SOS Sent (Y/N)</label></div>
               <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Assigned To (Internal Team)</label><input type="text" placeholder="Assigned To (Fiber/NOC Team)" onChange={e => setFormData({...formData, assigned_to: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               
               <div className="sm:col-span-2 md:col-span-4"><label className="text-[10px] font-bold block mb-1 text-slate-900">Ticket Opened By</label><input type="text" value={user?.fullname || 'System'} readOnly className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-200 text-slate-700 font-bold" /></div>
@@ -350,7 +463,7 @@ export default function CustomerService() {
       {/* CLOSE QUERY MODAL */}
       {closingTicket && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Close Ticket: {closingTicket.id}</h3>
             <form onSubmit={handleCloseTicket} className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-sm">
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Query Status</label><select onChange={e => setClosingTicket({...closingTicket, status: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option value="Resolved">Resolved</option><option value="Closed">Closed</option></select></div>

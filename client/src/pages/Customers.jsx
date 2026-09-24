@@ -18,7 +18,8 @@ export default function Customers() {
 
   const [paymentData, setPaymentData] = useState({
     date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '',
-    durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE'
+    durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE',
+    receivedBy: user?.fullname || 'Customer Service'
   });
 
   const getProfileData = (custId, custName) => ({
@@ -42,6 +43,15 @@ export default function Customers() {
     formDataObj.append('file', file);
     const res = await authFetch('/api/crm/customers/import', { method: 'POST', body: formDataObj, headers: { 'Content-Type': null } });
     if (res.ok) { alert("Spreadsheet imported successfully!"); refreshSystemData(); }
+  };
+
+  const openPaymentForProfile = (profile) => {
+    setPaymentData({ 
+      date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '',
+      durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE',
+      receivedBy: user?.fullname || 'Customer Service'
+    });
+    setIsPaymentModalOpen(true);
   };
 
   const calculatedDueDate = useMemo(() => {
@@ -74,7 +84,6 @@ export default function Customers() {
     e.preventDefault();
     const monthsNum = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths) || 1) : paymentData.durationMonths;
     
-    // 1. Post to Accounting Ledger
     const ledgerPayload = {
       entry_date: paymentData.date,
       inv_no: paymentData.reference || `REC-${Date.now().toString().slice(-6)}`,
@@ -91,13 +100,12 @@ export default function Customers() {
       payment_mode: paymentData.method,
       duration_months: monthsNum,
       next_due_date: calculatedDueDate,
-      received_by: user?.fullname || 'Customer Service',
+      received_by: paymentData.receivedBy || 'Customer Service',
       reference_id: activeProfile.id
     };
 
     await authFetch('/api/accounting/ledger', { method: 'POST', body: JSON.stringify(ledgerPayload) });
 
-    // 2. Update Customer Balances
     const custPayload = {
       amount_paid: paymentData.amount,
       last_payment_date: paymentData.date,
@@ -109,7 +117,8 @@ export default function Customers() {
     setIsPaymentModalOpen(false);
     setPaymentData({
       date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '',
-      durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE'
+      durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE',
+      receivedBy: user?.fullname || 'Customer Service'
     });
     alert('Payment successfully recorded and posted to the ledger.');
     
@@ -157,7 +166,11 @@ export default function Customers() {
       {activeProfile && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-4xl max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <h3 className="font-bold text-xl sm:text-2xl mb-4 leading-tight text-slate-900">{activeProfile.name} <br className="sm:hidden" /><span className="text-xs sm:text-sm font-mono bg-blue-100 text-blue-900 px-2 py-0.5 rounded sm:ml-2 border border-blue-200 shadow-sm">{activeProfile.voix_no}</span></h3>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4 border-b border-slate-200 pb-4">
+              <h3 className="font-bold text-xl sm:text-2xl leading-tight text-slate-900">{activeProfile.name} <br className="sm:hidden" /><span className="text-xs sm:text-sm font-mono bg-blue-100 text-blue-900 px-2 py-0.5 rounded sm:ml-2 border border-blue-200 shadow-sm">{activeProfile.voix_no}</span></h3>
+              <button onClick={() => openPaymentForProfile(activeProfile)} className="font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg w-full sm:w-auto transition shadow-sm flex items-center justify-center gap-1.5"><CreditCard className="w-4 h-4"/> Record Payment</button>
+            </div>
+            
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-6">
               <div className="bg-slate-50 p-3 border border-slate-200 rounded-lg text-slate-900"><strong className="text-slate-800">Status:</strong><br/><span className="font-medium text-slate-700">{activeProfile.status}</span></div>
               <div className="bg-slate-50 p-3 border border-slate-200 rounded-lg text-slate-900"><strong className="text-slate-800">Schedule:</strong><br/><span className="font-medium text-slate-700">{activeProfile.payment_schedule}</span></div>
@@ -200,9 +213,6 @@ export default function Customers() {
 
             <div className="flex flex-col sm:flex-row justify-end mt-4 pt-4 border-t border-slate-200 gap-2">
               <button onClick={() => setActiveProfile(null)} className="font-bold bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2.5 sm:py-2 rounded-lg w-full sm:w-auto transition shadow-sm">Close Profile</button>
-              {(hasRole(['Customer Service', 'Management', 'Accounting', 'GM', 'Dev'])) && (
-                <button onClick={() => setIsPaymentModalOpen(true)} className="font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg w-full sm:w-auto transition shadow-sm flex items-center justify-center gap-1.5"><CreditCard className="w-4 h-4"/> Record Payment</button>
-              )}
             </div>
           </div>
         </div>
@@ -291,6 +301,11 @@ export default function Customers() {
                   <div className="text-amber-800 font-bold">VAT: ₦{calculatedTax.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                   <div className="text-emerald-800 font-bold">Net: ₦{calculatedTax.net.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                 </div>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-[10px] font-bold text-slate-900 block mb-1">Received By</label>
+                <input type="text" required value={paymentData.receivedBy} onChange={e => setPaymentData({...paymentData, receivedBy: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 font-bold" />
               </div>
 
               <div className="sm:col-span-2 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
