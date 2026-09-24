@@ -87,7 +87,7 @@ export default function Requisitions() {
                     <button onClick={() => handleApprove(req.id)} className="bg-slate-900 text-white px-4 py-2.5 sm:py-2 rounded-lg text-xs font-bold hover:bg-emerald-600 transition shadow-sm w-full whitespace-nowrap">
                       {req.approval_stage === 'Pending Inventory' ? 'Issue Materials to WO' : 'Sign & Approve'}
                     </button>
-                    <button onClick={() => handleReject(req.id)} className="bg-red-50 text-red-800 border border-red-200 hover:bg-red-600 hover:text-white px-4 py-2.5 sm:py-2 rounded-lg text-xs font-bold transition shadow-sm w-full flex items-center justify-center gap-1.5"><XCircle className="w-3.5 h-3.5"/> Reject</button>
+                    <button onClick={() => handleReject(req.id)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2.5 sm:py-2 rounded-lg text-xs transition shadow-sm w-full flex items-center justify-center gap-1.5"><XCircle className="w-3.5 h-3.5"/> Reject</button>
                   </>
                 )}
               </div>
@@ -100,7 +100,7 @@ export default function Requisitions() {
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Submit Requisition</h3>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
@@ -121,7 +121,7 @@ export default function Requisitions() {
                 </div>
               )}
               <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2.5 sm:py-2 rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
                 <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition">Submit Request</button>
               </div>
             </form>

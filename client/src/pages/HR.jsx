@@ -108,7 +108,7 @@ export default function HR() {
       {/* Role Assignment Modal */}
       {editingRolesFor && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 text-slate-900 border-b border-slate-200 pb-2">Edit Roles for {editingRolesFor.fullname}</h3>
             <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-300 h-48 overflow-y-auto custom-scrollbar">
               {AVAILABLE_ROLES.map(role => (
@@ -122,7 +122,7 @@ export default function HR() {
               ))}
             </div>
             <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-4">
-              <button onClick={() => setEditingRolesFor(null)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+              <button onClick={() => setEditingRolesFor(null)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2.5 sm:py-2 rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
               <button onClick={() => saveRoles(editingRolesFor.id)} className="px-4 py-2.5 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Save Roles</button>
             </div>
           </div>
@@ -132,13 +132,13 @@ export default function HR() {
       {/* Add Staff Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Register New Staff</h3>
             <form onSubmit={handleRegister} className="space-y-4">
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Full Name</label><input type="text" required placeholder="Full Name" onChange={e => setFormData({...formData, fullname: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Username</label><input type="text" required placeholder="Username" onChange={e => setFormData({...formData, username: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Email Address</label><input type="email" placeholder="Email Address" onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Password</label><input type="password" required placeholder="Password" onChange={e => setFormData({...formData, password: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Full Name</label><input type="text" required placeholder="Full Name" onChange={e => setFormData({...formData, fullname: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Username</label><input type="text" required placeholder="Username" onChange={e => setFormData({...formData, username: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Email Address</label><input type="email" placeholder="Email Address" onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Password</label><input type="password" required placeholder="Password" onChange={e => setFormData({...formData, password: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               
               <div className="pt-2">
                 <label className="text-[11px] sm:text-xs font-bold text-slate-900 block mb-2">Assign Operational Roles</label>
@@ -152,7 +152,7 @@ export default function HR() {
               </div>
 
               <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2.5 sm:py-2 rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
                 <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition">Generate EMP ID</button>
               </div>
             </form>

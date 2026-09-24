@@ -78,44 +78,44 @@ export default function Sales() {
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
-          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Register Sales Lead</h3>
             <form onSubmit={handleAddDeal} className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="sm:col-span-2">
                 <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Customer / Enterprise Name</label>
-                <input type="text" required placeholder="Customer Name" onChange={e => setFormData({...formData, customer_name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" />
+                <input type="text" required placeholder="Customer Name" onChange={e => setFormData({...formData, customer_name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" />
               </div>
               
               <div>
                 <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Contact Phone</label>
-                <input type="text" required placeholder="Phone Number" onChange={e => setFormData({...formData, contact_phone: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" />
+                <input type="text" required placeholder="Phone Number" onChange={e => setFormData({...formData, contact_phone: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" />
               </div>
               <div>
                 <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Contact Email</label>
-                <input type="email" placeholder="Email Address" onChange={e => setFormData({...formData, contact_email: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" />
+                <input type="email" placeholder="Email Address" onChange={e => setFormData({...formData, contact_email: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" />
               </div>
               
               <div className="sm:col-span-2">
                 <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Exact Location / Address</label>
-                <input type="text" required placeholder="Location" onChange={e => setFormData({...formData, location: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" />
+                <input type="text" required placeholder="Location" onChange={e => setFormData({...formData, location: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" />
               </div>
               
               <div className="sm:col-span-2">
                 <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Survey Details</label>
-                <textarea placeholder="Optical Survey notes, LOS feasibility..." onChange={e => setFormData({...formData, survey_details: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-500 h-20" />
+                <textarea placeholder="Optical Survey notes, LOS feasibility..." onChange={e => setFormData({...formData, survey_details: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder-slate-400 h-20" />
               </div>
               
               <div>
                 <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Proposed Plan</label>
-                <input type="text" required placeholder="e.g. 100Mbps Dedicated" onChange={e => setFormData({...formData, proposed_plan: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" />
+                <input type="text" required placeholder="e.g. 100Mbps Dedicated" onChange={e => setFormData({...formData, proposed_plan: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" />
               </div>
               <div>
                 <label className="text-[10px] sm:text-xs font-bold text-slate-900 block mb-1">Expected Deal Value (₦)</label>
-                <input type="number" required placeholder="Deal Amount" onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500 font-mono font-bold" />
+                <input type="number" required placeholder="Deal Amount" onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400 font-mono font-bold" />
               </div>
 
               <div className="sm:col-span-2 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2.5 sm:py-2 rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
                 <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition">Add to Pipeline</button>
               </div>
             </form>
