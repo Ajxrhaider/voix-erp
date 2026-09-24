@@ -17,8 +17,8 @@ export default function Customers() {
   });
 
   const [paymentData, setPaymentData] = useState({
-    date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '',
-    durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE',
+    customer_id: '', customer_name: '', date: new Date().toISOString().split('T')[0], amount: '', 
+    method: 'Bank Transfer', reference: '', durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE',
     receivedBy: user?.fullname || 'Customer Service'
   });
 
@@ -47,7 +47,7 @@ export default function Customers() {
 
   const openPaymentForProfile = (profile) => {
     setPaymentData({ 
-      ...paymentData, 
+      customer_id: profile.id, customer_name: profile.name,
       date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '',
       durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE',
       receivedBy: user?.fullname || 'Customer Service' 
@@ -84,14 +84,22 @@ export default function Customers() {
 
   const handleRecordPayment = async (e) => {
     e.preventDefault();
-    const monthsNum = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths) || 1) : paymentData.durationMonths;
     
+    // Dynamically identify if payment is from rich profile or general dropdown
+    const targetId = activeProfile ? activeProfile.id : paymentData.customer_id;
+    const targetName = activeProfile ? activeProfile.name : paymentData.customer_name;
+
+    if (!targetId) return alert("System requires a valid customer profile ID.");
+    
+    const monthsNum = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths) || 1) : paymentData.durationMonths;
+    const custType = customers.find(c => c.id === targetId)?.customer_type || activeProfile?.customer_type || 'FTTH';
+
     // 1. Post to Accounting Ledger
     const ledgerPayload = {
       entry_date: paymentData.date,
       inv_no: paymentData.reference || `REC-${Date.now().toString().slice(-6)}`,
-      customer_name: activeProfile.name,
-      customer_type: activeProfile.customer_type || 'FTTH',
+      customer_name: targetName,
+      customer_type: custType,
       type: 'Income',
       category: 'Monthly Bandwidth Subscription',
       description: `Subscription Renewal (${monthsNum} Months)`,
@@ -104,7 +112,7 @@ export default function Customers() {
       duration_months: monthsNum,
       next_due_date: calculatedDueDate,
       received_by: paymentData.receivedBy || 'Customer Service',
-      reference_id: activeProfile.id
+      reference_id: targetId
     };
 
     await authFetch('/api/accounting/ledger', { method: 'POST', body: JSON.stringify(ledgerPayload) });
@@ -116,10 +124,11 @@ export default function Customers() {
       next_due_date: calculatedDueDate
     };
 
-    await authFetch(`/api/crm/customers/${activeProfile.id}/payment`, { method: 'PATCH', body: JSON.stringify(custPayload) });
+    await authFetch(`/api/crm/customers/${targetId}/payment`, { method: 'PATCH', body: JSON.stringify(custPayload) });
 
     setIsPaymentModalOpen(false);
     setPaymentData({
+      customer_id: '', customer_name: '',
       date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '',
       durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE',
       receivedBy: user?.fullname || 'Customer Service'
@@ -137,7 +146,14 @@ export default function Customers() {
       icon={<Users className="w-6 h-6" />}
       headerActions={hasRole(['Customer Service', 'Management', 'GM', 'Admin', 'Dev']) && (
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <button onClick={() => setIsModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><Plus className="w-4 h-4"/> Add Customer</button>
+          <button onClick={() => {
+            setPaymentData({ 
+              customer_id: '', customer_name: '', date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '',
+              durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE', receivedBy: user?.fullname || 'Customer Service' 
+            });
+            setIsPaymentModalOpen(true);
+          }} className="bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><CreditCard className="w-4 h-4"/> Record Subscription Payment</button>
+          <button onClick={() => setIsModalOpen(true)} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><Plus className="w-4 h-4"/> Add Customer</button>
           <input type="file" accept=".xlsx, .csv" ref={fileInputRef} onChange={handleBulkImport} className="hidden" />
           <button onClick={() => fileInputRef.current.click()} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><Upload className="w-4 h-4"/> Bulk Import</button>
         </div>
@@ -172,7 +188,7 @@ export default function Customers() {
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-4xl max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4 border-b border-slate-200 pb-4">
               <h3 className="font-bold text-xl sm:text-2xl leading-tight text-slate-900">{activeProfile.name} <br className="sm:hidden" /><span className="text-xs sm:text-sm font-mono bg-blue-100 text-blue-900 px-2 py-0.5 rounded sm:ml-2 border border-blue-200 shadow-sm">{activeProfile.voix_no}</span></h3>
-              <button onClick={() => openPaymentForProfile(activeProfile)} className="font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg w-full sm:w-auto transition shadow-sm flex items-center justify-center gap-1.5"><CreditCard className="w-4 h-4"/> Record Payment</button>
+              <button onClick={() => openPaymentForProfile(activeProfile)} className="font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg w-full sm:w-auto transition shadow-sm flex items-center justify-center gap-1.5"><CreditCard className="w-4 h-4"/> Record Subscription Payment</button>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-6">
@@ -216,22 +232,32 @@ export default function Customers() {
             </div>
 
             <div className="flex flex-col sm:flex-row justify-end mt-4 pt-4 border-t border-slate-200 gap-2">
-              <button onClick={() => setActiveProfile(null)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2.5 sm:py-2 rounded-lg w-full sm:w-auto transition shadow-sm">Close Profile</button>
+              <button onClick={() => setActiveProfile(null)} className="font-bold bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2.5 sm:py-2 rounded-lg w-full sm:w-auto transition shadow-sm">Close Profile</button>
             </div>
           </div>
         </div>
       )}
 
       {/* RECORD PAYMENT MODAL */}
-      {isPaymentModalOpen && activeProfile && (
+      {isPaymentModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-[60]">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
-            <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900 flex items-center gap-2"><CreditCard className="w-5 h-5 text-emerald-600"/> Record Payment</h3>
+            <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900 flex items-center gap-2"><CreditCard className="w-5 h-5 text-emerald-600"/> Record Subscription Payment</h3>
             
             <form onSubmit={handleRecordPayment} className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="sm:col-span-2">
                 <label className="text-[10px] font-bold text-slate-900 block mb-1">Customer / Enterprise</label>
-                <input type="text" readOnly value={activeProfile.name} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-200 text-slate-700 font-bold" />
+                {activeProfile ? (
+                  <input type="text" readOnly value={activeProfile.name} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-200 text-slate-700 font-bold" />
+                ) : (
+                  <>
+                    <input list="pay-customers" required placeholder="Type customer name or Voix No..." value={paymentData.customer_name} onChange={e => {
+                      const match = customers.find(c => c.name === e.target.value || c.voix_no === e.target.value);
+                      setPaymentData({...paymentData, customer_name: e.target.value, customer_id: match ? match.id : ''});
+                    }} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder-slate-400 font-bold" />
+                    <datalist id="pay-customers">{customers.map(c => <option key={c.id} value={c.name}>{c.voix_no}</option>)}</datalist>
+                  </>
+                )}
               </div>
 
               <div>
@@ -251,7 +277,7 @@ export default function Customers() {
               
               <div>
                 <label className="text-[10px] font-bold text-slate-900 block mb-1">Payment Reference (e.g. Teller No.)</label>
-                <input type="text" placeholder="Auto-generated if blank" value={paymentData.reference} onChange={e => setPaymentData({...paymentData, reference: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-400 font-mono" />
+                <input type="text" placeholder="Auto-generated if blank" value={paymentData.reference} onChange={e => setPaymentData({...paymentData, reference: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400 font-mono" />
               </div>
 
               <div>
@@ -261,6 +287,7 @@ export default function Customers() {
                   <option value={3}>3 Months (Quarterly)</option>
                   <option value={6}>6 Months (Bi-Annual)</option>
                   <option value={12}>12 Months (1 Year)</option>
+                  <option value={0}>One-off Payment</option>
                   <option value={-1}>Custom Duration</option>
                 </select>
               </div>
@@ -289,7 +316,7 @@ export default function Customers() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-900 block mb-1">Gross Amount (₦)</label>
-                    <input type="number" required placeholder="0.00" value={paymentData.amount} onChange={e => setPaymentData({...paymentData, amount: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 font-mono font-bold placeholder:text-slate-400" />
+                    <input type="number" required placeholder="0.00" value={paymentData.amount} onChange={e => setPaymentData({...paymentData, amount: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 font-mono font-bold placeholder-slate-400" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-900 block mb-1">Calculation Type</label>
@@ -327,24 +354,24 @@ export default function Customers() {
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-3xl max-h-[90vh] overflow-y-auto custom-scrollbar">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Manual Customer Boarding</h3>
             <form onSubmit={handleManualAdd} className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
-              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Voix Number</label><input type="text" placeholder="Auto-gen if blank" onChange={e => setFormData({...formData, voix_no: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
-              <div className="md:col-span-2"><label className="text-[10px] text-slate-900 font-bold block mb-1">Customer Name</label><input type="text" required placeholder="Customer Name" onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
+              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Voix Number</label><input type="text" placeholder="Auto-gen if blank" onChange={e => setFormData({...formData, voix_no: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" /></div>
+              <div className="md:col-span-2"><label className="text-[10px] text-slate-900 font-bold block mb-1">Customer Name</label><input type="text" required placeholder="Customer Name" onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" /></div>
               
-              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">MAC Address</label><input type="text" placeholder="MAC Address" onChange={e => setFormData({...formData, mac_address: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
+              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">MAC Address</label><input type="text" placeholder="MAC Address" onChange={e => setFormData({...formData, mac_address: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" /></div>
               <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Customer Type</label><select onChange={e => setFormData({...formData, customer_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 font-bold"><option>FTTH</option><option>Enterprise</option></select></div>
               <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Payment Schedule</label><select onChange={e => setFormData({...formData, payment_schedule: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 font-bold"><option>Monthly</option><option>Quarterly</option><option>Bi-Annual</option><option>Annual</option></select></div>
               
-              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Amount Payable (₦)</label><input type="number" placeholder="Amount Payable (₦)" onChange={e => setFormData({...formData, amount_payable: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-500" /></div>
-              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Amount Paid (₦)</label><input type="number" placeholder="Amount Paid (₦)" onChange={e => setFormData({...formData, amount_paid: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder:text-slate-500" /></div>
-              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Outstanding Balance (₦)</label><input type="number" placeholder="Outstanding Balance (₦)" onChange={e => setFormData({...formData, outstanding_balance: e.target.value})} className="w-full border border-red-300 p-2.5 rounded-lg text-sm bg-red-50 text-red-900 placeholder:text-red-500 font-bold" /></div>
+              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Amount Payable (₦)</label><input type="number" placeholder="Amount Payable (₦)" onChange={e => setFormData({...formData, amount_payable: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder-slate-500" /></div>
+              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Amount Paid (₦)</label><input type="number" placeholder="Amount Paid (₦)" onChange={e => setFormData({...formData, amount_paid: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900 placeholder-slate-500" /></div>
+              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Outstanding Balance (₦)</label><input type="number" placeholder="Outstanding Balance (₦)" onChange={e => setFormData({...formData, outstanding_balance: e.target.value})} className="w-full border border-red-300 p-2.5 rounded-lg text-sm bg-red-50 text-red-900 placeholder-slate-500 font-bold" /></div>
               
-              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Bank Received</label><input type="text" placeholder="Bank Received" onChange={e => setFormData({...formData, bank_received: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
+              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Bank Received</label><input type="text" placeholder="Bank Received" onChange={e => setFormData({...formData, bank_received: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" /></div>
               <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Last Payment Date</label><input type="date" onChange={e => setFormData({...formData, last_payment_date: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900" /></div>
               <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Next Due Date</label><input type="date" onChange={e => setFormData({...formData, next_due_date: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-white text-slate-900" /></div>
               
-              <div className="md:col-span-3"><label className="text-[10px] text-slate-900 font-bold block mb-1">Physical Address</label><input type="text" required placeholder="Physical Address" onChange={e => setFormData({...formData, address: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
-              <div className="md:col-span-2"><label className="text-[10px] text-slate-900 font-bold block mb-1">Email Address</label><input type="email" placeholder="Email Address" onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
-              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Phone Number</label><input type="text" placeholder="Phone Number" onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder:text-slate-500" /></div>
+              <div className="md:col-span-3"><label className="text-[10px] text-slate-900 font-bold block mb-1">Physical Address</label><input type="text" required placeholder="Physical Address" onChange={e => setFormData({...formData, address: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" /></div>
+              <div className="md:col-span-2"><label className="text-[10px] text-slate-900 font-bold block mb-1">Email Address</label><input type="email" placeholder="Email Address" onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" /></div>
+              <div><label className="text-[10px] text-slate-900 font-bold block mb-1">Phone Number</label><input type="text" placeholder="Phone Number" onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-500" /></div>
               
               <div className="md:col-span-3 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>

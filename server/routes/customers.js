@@ -7,10 +7,12 @@ import * as XLSX from 'xlsx';
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Get all customers
 router.get('/', authenticateToken, (req, res) => {
   res.json(db.prepare(`SELECT * FROM customers ORDER BY name ASC`).all());
 });
 
+// Create single customer manually
 router.post('/', authenticateToken, (req, res) => {
   const {
     voix_no, name, mac_address, customer_type, payment_schedule, amount_payable,
@@ -38,6 +40,7 @@ router.post('/', authenticateToken, (req, res) => {
   res.status(201).json({ id: custId });
 });
 
+// Bulk Import from Spreadsheet
 router.post('/bulk-import', authenticateToken, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Excel or CSV file required' });
 
@@ -75,24 +78,36 @@ router.post('/bulk-import', authenticateToken, upload.single('file'), (req, res)
   }
 });
 
-// Update Customer Balances & Trigger Notification
+// UPDATE CUSTOMER BALANCES & TRIGGER NOTIFICATION
 router.patch('/:id/payment', authenticateToken, (req, res) => {
   const { amount_paid, last_payment_date, next_due_date } = req.body;
   const cust = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(req.params.id);
+  
   if (!cust) return res.status(404).json({ message: 'Customer not found' });
 
   const newAmountPaid = (parseFloat(cust.amount_paid) || 0) + parseFloat(amount_paid);
   const newBalance = Math.max(0, (parseFloat(cust.outstanding_balance) || 0) - parseFloat(amount_paid));
 
-  // Update profile
-  db.prepare(`UPDATE customers SET amount_paid = ?, outstanding_balance = ?, last_payment_date = ?, next_due_date = ?, status = 'Active' WHERE id = ?`)
-    .run(newAmountPaid, newBalance, last_payment_date, next_due_date, req.params.id);
+  // Update profile metrics
+  db.prepare(`
+    UPDATE customers 
+    SET amount_paid = ?, outstanding_balance = ?, last_payment_date = ?, next_due_date = ?, status = 'Active' 
+    WHERE id = ?
+  `).run(newAmountPaid, newBalance, last_payment_date, next_due_date, req.params.id);
 
-  // Distribute Notification to Management & Accounting
+  // Distribute In-App Notification to Management & Accounting
   const oversightTeam = db.prepare(`SELECT id FROM users WHERE roles LIKE '%"Management"%' OR roles LIKE '%"Accounting"%' OR roles LIKE '%"GM"%'`).all();
+  
   oversightTeam.forEach(staff => {
-    db.prepare(`INSERT INTO notifications (id, user_id, title, message, type, is_read) VALUES (?, ?, ?, ?, 'Payment', 0)`)
-      .run(generateId('notif', 'NOT'), staff.id, 'Subscription Payment Received', `₦${parseFloat(amount_paid).toLocaleString()} logged for ${cust.name}`);
+    db.prepare(`
+      INSERT INTO notifications (id, user_id, title, message, type, is_read) 
+      VALUES (?, ?, ?, ?, 'Payment', 0)
+    `).run(
+      generateId('notif', 'NOT'), 
+      staff.id, 
+      'Subscription Payment Received', 
+      `₦${parseFloat(amount_paid).toLocaleString()} logged for ${cust.name}`
+    );
   });
 
   req.io.emit('erp-data-changed');
