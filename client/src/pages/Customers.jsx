@@ -47,13 +47,15 @@ export default function Customers() {
 
   const openPaymentForProfile = (profile) => {
     setPaymentData({ 
+      ...paymentData, 
       date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '',
       durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE',
-      receivedBy: user?.fullname || 'Customer Service'
+      receivedBy: user?.fullname || 'Customer Service' 
     });
     setIsPaymentModalOpen(true);
   };
 
+  // Payment Logic Engine
   const calculatedDueDate = useMemo(() => {
     if (!paymentData.date || paymentData.durationMonths === 0) return '';
     const monthsToAdd = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths) || 1) : paymentData.durationMonths;
@@ -84,6 +86,7 @@ export default function Customers() {
     e.preventDefault();
     const monthsNum = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths) || 1) : paymentData.durationMonths;
     
+    // 1. Post to Accounting Ledger
     const ledgerPayload = {
       entry_date: paymentData.date,
       inv_no: paymentData.reference || `REC-${Date.now().toString().slice(-6)}`,
@@ -106,6 +109,7 @@ export default function Customers() {
 
     await authFetch('/api/accounting/ledger', { method: 'POST', body: JSON.stringify(ledgerPayload) });
 
+    // 2. Update Customer Balances
     const custPayload = {
       amount_paid: paymentData.amount,
       last_payment_date: paymentData.date,
@@ -164,7 +168,7 @@ export default function Customers() {
       </div>
 
       {activeProfile && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-40">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-4xl max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4 border-b border-slate-200 pb-4">
               <h3 className="font-bold text-xl sm:text-2xl leading-tight text-slate-900">{activeProfile.name} <br className="sm:hidden" /><span className="text-xs sm:text-sm font-mono bg-blue-100 text-blue-900 px-2 py-0.5 rounded sm:ml-2 border border-blue-200 shadow-sm">{activeProfile.voix_no}</span></h3>
@@ -212,7 +216,7 @@ export default function Customers() {
             </div>
 
             <div className="flex flex-col sm:flex-row justify-end mt-4 pt-4 border-t border-slate-200 gap-2">
-              <button onClick={() => setActiveProfile(null)} className="font-bold bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2.5 sm:py-2 rounded-lg w-full sm:w-auto transition shadow-sm">Close Profile</button>
+              <button onClick={() => setActiveProfile(null)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2.5 sm:py-2 rounded-lg w-full sm:w-auto transition shadow-sm">Close Profile</button>
             </div>
           </div>
         </div>
