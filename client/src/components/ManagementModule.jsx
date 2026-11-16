@@ -29,7 +29,7 @@ export default function ManagementModule() {
   };
 
   return (
-    <div className="space-y-6 text-slate-100 font-sans">
+    <div className="space-y-6 font-sans">
       {/* Visual Appraisal Scoring Matrix */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
         <h3 className="text-sm font-bold text-teal-400 mb-4 flex items-center gap-2">

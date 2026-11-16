@@ -77,7 +77,7 @@ export default function SalesModule() {
   };
 
   return (
-    <div className="space-y-6 text-slate-100 font-sans">
+    <div className="space-y-6 font-sans">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Form panel to trigger pre-sales survey requests */}

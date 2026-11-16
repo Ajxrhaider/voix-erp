@@ -1,48 +1,111 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import ModuleLayout from '../components/layout/ModuleLayout';
+import { canEscalateTicket, isDispatchableTicket } from '../utils/ticketFilters.js';
 import { AlertCircle, Plus, Wrench, CheckSquare, AlertTriangle } from 'lucide-react';
+
+const blankTicketForm = () => ({
+  date_received: new Date().toISOString().split('T')[0],
+  time_received: '',
+  customer_ip: '',
+  customer_name: '',
+  query_type: '',
+  location: '',
+  service_type: 'FTTH',
+  description: '',
+  whatsapp_sos_sent: false,
+  assigned_to: '',
+  priority: 'Medium'
+});
 
 export default function Tickets() {
   const { tickets, teams, authFetch, refreshSystemData, hasRole, user } = useContext(AppContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [closingTicket, setClosingTicket] = useState(null);
   const [convertingTicket, setConvertingTicket] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [formData, setFormData] = useState({
-    date_received: new Date().toISOString().split('T')[0], time_received: '', 
-    customer_ip: '', customer_name: '', query_type: '', location: '', 
-    service_type: 'FTTH', description: '', whatsapp_sos_sent: false, assigned_to: '', priority: 'Medium'
-  });
+  const [formData, setFormData] = useState(blankTicketForm);
 
   const [woData, setWoData] = useState({ team_id: '', objective: '', location: '' });
 
+  const readResponse = async (response, fallback) => {
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message || fallback);
+    return body;
+  };
+
   const handleCreateTicket = async (e) => {
     e.preventDefault();
-    await authFetch('/api/tickets', { method: 'POST', body: JSON.stringify(formData) });
-    setIsModalOpen(false);
-    refreshSystemData();
+    setErrorMessage('');
+    setIsSaving(true);
+    try {
+      const response = await authFetch('/api/tickets', { method: 'POST', body: JSON.stringify(formData) });
+      await readResponse(response, 'The customer query could not be created.');
+      setIsModalOpen(false);
+      setFormData(blankTicketForm());
+      await refreshSystemData();
+    } catch (error) {
+      setErrorMessage(error.message || 'The customer query could not be created.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCloseTicket = async (e) => {
     e.preventDefault();
-    await authFetch(`/api/tickets/${closingTicket.id}/close`, { method: 'PATCH', body: JSON.stringify(closingTicket) });
-    setClosingTicket(null);
-    refreshSystemData();
+    if (!closingTicket) return;
+    setErrorMessage('');
+    setIsSaving(true);
+    try {
+      const response = await authFetch(`/api/tickets/${encodeURIComponent(closingTicket.id)}/close`, {
+        method: 'PATCH',
+        body: JSON.stringify(closingTicket)
+      });
+      await readResponse(response, 'The ticket could not be updated.');
+      setClosingTicket(null);
+      await refreshSystemData();
+    } catch (error) {
+      setErrorMessage(error.message || 'The ticket could not be updated.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleEscalate = async (id) => {
-    if (window.confirm("Are you sure you want to escalate this ticket to Management?")) {
-      await authFetch(`/api/tickets/${id}/escalate`, { method: 'PATCH' });
-      refreshSystemData();
+    if (!window.confirm('Are you sure you want to escalate this ticket to Management?')) return;
+    setErrorMessage('');
+    setIsSaving(true);
+    try {
+      const response = await authFetch(`/api/tickets/${encodeURIComponent(id)}/escalate`, { method: 'PATCH' });
+      await readResponse(response, 'The ticket could not be escalated.');
+      await refreshSystemData();
+    } catch (error) {
+      setErrorMessage(error.message || 'The ticket could not be escalated.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleConvertToWO = async (e) => {
     e.preventDefault();
-    await authFetch(`/api/tickets/${convertingTicket.id}/convert-to-work-order`, { method: 'POST', body: JSON.stringify(woData) });
-    setConvertingTicket(null);
-    refreshSystemData();
+    if (!convertingTicket) return;
+    setErrorMessage('');
+    setIsSaving(true);
+    try {
+      const response = await authFetch(`/api/tickets/${encodeURIComponent(convertingTicket.id)}/convert-to-work-order`, {
+        method: 'POST',
+        body: JSON.stringify(woData)
+      });
+      await readResponse(response, 'The work order could not be dispatched.');
+      setConvertingTicket(null);
+      await refreshSystemData();
+    } catch (error) {
+      setErrorMessage(error.message || 'The work order could not be dispatched.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -51,9 +114,12 @@ export default function Tickets() {
       subtitle="Manage network alerts, detailed queries, and field dispatches"
       icon={<AlertCircle className="w-6 h-6" />}
       headerActions={hasRole(['NOC', 'Management', 'GM', 'Dev', 'Customer Service']) && (
-        <button onClick={() => setIsModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><Plus className="w-4 h-4"/> Log New Query</button>
+        <button onClick={() => { setErrorMessage(''); setFormData(blankTicketForm()); setIsModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><Plus className="w-4 h-4"/> Log New Query</button>
       )}
     >
+      {errorMessage && !isModalOpen && !closingTicket && !convertingTicket && (
+        <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{errorMessage}</div>
+      )}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto custom-scrollbar w-full">
         <table className="w-full text-left text-sm min-w-[1000px]">
           <thead className="bg-slate-50 border-b border-slate-200">
@@ -71,7 +137,7 @@ export default function Tickets() {
           <tbody className="divide-y divide-slate-100">
             {tickets.filter(t => t.status !== 'Closed').map(t => (
               <tr key={t.id} className="hover:bg-slate-50 transition">
-                <td className="p-3 font-mono font-bold text-slate-600 whitespace-nowrap">{t.id}</td>
+                <td className="p-3 font-mono font-bold text-slate-600 whitespace-nowrap">{t.external_ref || t.id}</td>
                 <td className="p-3">
                   <span className="block font-bold text-slate-900 whitespace-nowrap">{t.date_received}</span>
                   <span className="block text-[10px] text-slate-500 font-mono mt-0.5">{t.time_received || '--:--'}</span>
@@ -87,14 +153,14 @@ export default function Tickets() {
                 </td>
                 <td className="p-3 text-right whitespace-nowrap">
                   <div className="flex items-center justify-end gap-1.5">
-                    {t.status !== 'Resolved' && t.status !== 'Converted to Work Order' && hasRole(['NOC', 'Management', 'Dev', 'HOD NOC']) && (
-                      <>
-                        <button onClick={() => { setConvertingTicket(t); setWoData({ team_id: '', objective: t.description, location: t.location }); }} className="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1.5 rounded text-[10px] font-bold shadow-sm transition" title="Convert to Work Order">Convert WO</button>
-                        <button onClick={() => handleEscalate(t.id)} className="bg-red-50 hover:bg-red-100 text-red-800 border border-red-200 px-2.5 py-1.5 rounded text-[10px] font-bold shadow-sm transition" title="Escalate Ticket">Escalate</button>
-                      </>
+                    {isDispatchableTicket(t) && hasRole(['NOC', 'Management', 'Dev', 'HOD NOC']) && (
+                      <button onClick={() => { setErrorMessage(''); setConvertingTicket(t); setWoData({ team_id: '', objective: t.description || t.query_type || '', location: t.location || '' }); }} disabled={isSaving} className="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1.5 rounded text-[10px] font-bold shadow-sm transition disabled:opacity-50" title="Convert to Work Order">Convert WO</button>
+                    )}
+                    {canEscalateTicket(t) && hasRole(['NOC', 'Management', 'Dev', 'HOD NOC']) && (
+                      <button onClick={() => handleEscalate(t.id)} disabled={isSaving} className="bg-red-50 hover:bg-red-100 text-red-800 border border-red-200 px-2.5 py-1.5 rounded text-[10px] font-bold shadow-sm transition disabled:opacity-50" title="Escalate Ticket">Escalate</button>
                     )}
                     {(t.status === 'Resolved' || hasRole(['Management', 'Dev', 'NOC'])) && (
-                      <button onClick={() => setClosingTicket(t)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded text-[10px] font-bold shadow-sm transition" title="Close Ticket">Close</button>
+                      <button onClick={() => { setErrorMessage(''); setClosingTicket({ ...t, status: t.status === 'Resolved' ? 'Closed' : 'Resolved', resolution_datetime: '', mttr: '', resolution_by: '', customer_feedback: '', closure_notes: '' }); }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded text-[10px] font-bold shadow-sm transition" title="Close Ticket">Close</button>
                     )}
                   </div>
                 </td>
@@ -110,6 +176,7 @@ export default function Tickets() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-3xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Log Customer Query</h3>
+            {errorMessage && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{errorMessage}</div>}
             <form onSubmit={handleCreateTicket} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Customer Name (Optional)</label><input type="text" placeholder="Customer Name" onChange={e => setFormData({...formData, customer_name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Date Received</label><input type="date" required value={formData.date_received} onChange={e => setFormData({...formData, date_received: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900" /></div>
@@ -130,8 +197,8 @@ export default function Tickets() {
               <div className="sm:col-span-2 md:col-span-4"><label className="text-[10px] font-bold block mb-1 text-slate-900">Ticket Opened By</label><input type="text" value={user?.fullname || 'System'} readOnly className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-200 text-slate-700 font-bold" /></div>
               
               <div className="sm:col-span-2 md:col-span-4 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
-                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition">Log Query</button>
+                <button type="button" onClick={() => { setIsModalOpen(false); setFormData(blankTicketForm()); setErrorMessage(''); }} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="submit" disabled={isSaving} className="px-4 py-2.5 sm:py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition disabled:cursor-not-allowed disabled:opacity-60">{isSaving ? 'Saving…' : 'Log Query'}</button>
               </div>
             </form>
           </div>
@@ -143,8 +210,9 @@ export default function Tickets() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Close Ticket: {closingTicket.id}</h3>
+            {errorMessage && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{errorMessage}</div>}
             <form onSubmit={handleCloseTicket} className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-sm">
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Query Status</label><select onChange={e => setClosingTicket({...closingTicket, status: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option value="Resolved">Resolved</option><option value="Closed">Closed</option></select></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Query Status</label><select required value={closingTicket.status} onChange={e => setClosingTicket({...closingTicket, status: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option value="Resolved">Resolved</option><option value="Closed">Closed</option></select></div>
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Resolution Date/Time</label><input type="datetime-local" onChange={e => setClosingTicket({...closingTicket, resolution_datetime: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900" /></div>
               
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Mean Time to Resolve (MTTR)</label><input type="text" placeholder="e.g. 2 Hours" onChange={e => setClosingTicket({...closingTicket, mttr: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-500" /></div>
@@ -156,8 +224,8 @@ export default function Tickets() {
               <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Ticket Closed By</label><input type="text" value={user?.fullname || 'System'} readOnly className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-200 text-slate-700 font-bold" /></div>
               
               <div className="sm:col-span-2 flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
-                <button type="button" onClick={() => setClosingTicket(null)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
-                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition">Formally Close Ticket</button>
+                <button type="button" onClick={() => { setClosingTicket(null); setErrorMessage(''); }} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="submit" disabled={isSaving} className="px-4 py-2.5 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition disabled:cursor-not-allowed disabled:opacity-60">{isSaving ? 'Saving…' : 'Save Ticket Status'}</button>
               </div>
             </form>
           </div>
@@ -169,6 +237,7 @@ export default function Tickets() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Dispatch Work Order for {convertingTicket.id}</h3>
+            {errorMessage && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{errorMessage}</div>}
             <form onSubmit={handleConvertToWO} className="space-y-4">
               <div>
                 <label className="text-[10px] font-bold block mb-1 text-slate-900">Assign to Field Team</label>
@@ -187,8 +256,8 @@ export default function Tickets() {
               </div>
 
               <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-slate-200 mt-2">
-                <button type="button" onClick={() => setConvertingTicket(null)} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
-                <button type="submit" className="px-4 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition">Dispatch Team</button>
+                <button type="button" onClick={() => { setConvertingTicket(null); setErrorMessage(''); }} className="px-4 py-2.5 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold rounded-lg text-sm w-full sm:w-auto transition shadow-sm">Cancel</button>
+                <button type="submit" disabled={isSaving} className="px-4 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-sm shadow-sm w-full sm:w-auto transition disabled:cursor-not-allowed disabled:opacity-60">{isSaving ? 'Dispatching…' : 'Dispatch Team'}</button>
               </div>
             </form>
           </div>

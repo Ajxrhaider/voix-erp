@@ -1,11 +1,9 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../../context/AppContext';
-
-// 1. Add the API_URL variable at the top
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { apiUrl } from '../../utils/api';
 
 export default function AuthModule() {
-  const { loginUser } = useContext(AppContext);
+  const { login } = useContext(AppContext);
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -16,8 +14,7 @@ export default function AuthModule() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // 2. Prepend the API_URL to the endpoints
-    const endpoint = isLogin ? `${API_URL}/api/login` : `${API_URL}/api/register`;
+    const endpoint = isLogin ? apiUrl('/api/auth/login') : apiUrl('/api/auth/register');
     const payload = isLogin ? { username, password } : { username, password, fullname, role };
 
     try {
@@ -31,7 +28,7 @@ export default function AuthModule() {
       if (!res.ok) throw new Error(data.error || 'Failed');
       
       if (isLogin) {
-        loginUser(data.token);
+        login(data.token, data.user);
       } else { 
         alert('Registered!'); 
         setIsLogin(true); 

@@ -103,7 +103,7 @@ export default function HRModule() {
   };
 
   return (
-    <div className="space-y-6 text-slate-100 font-sans">
+    <div className="space-y-6 font-sans">
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
         {/* Staff Directory Selector Panel */}

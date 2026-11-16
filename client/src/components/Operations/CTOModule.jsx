@@ -74,7 +74,7 @@ export default function CTOModule() {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-slate-100 font-sans">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans">
       <div className="lg:col-span-5 space-y-6">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
           <div className="flex items-center space-x-2 mb-4">

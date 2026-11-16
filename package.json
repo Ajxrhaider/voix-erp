@@ -4,25 +4,26 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "server": "cd server && nodemon --watch . server.js",
-    "client": "cd client && vite",
+    "server": "nodemon --watch server --ext js,json --exec node server/server.js",
+    "client": "cd client && vite --host 0.0.0.0",
     "build": "vite build",
-    "start": "node server.js",
+    "test": "node --test",
+    "start": "node server/server.js",
     "dev": "concurrently -k -p \"[{name}]\" -c \"orange.bold,blue.bold\" \"npm run server\" \"npm run client\"",
-    "preview": "vite preview"
+    "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.3.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.21.0",
+    "express": "^4.22.3",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.415.0",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.5.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.25.1",
@@ -37,9 +38,9 @@
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.5.2",
     "concurrently": "^8.2.2",
-    "nodemon": "^3.1.14",
+    "nodemon": "3.1.11",
     "postcss": "^8.5.16",
     "tailwindcss": "^3.4.19",
-    "vite": "^5.3.1"
+    "vite": "^6.4.6"
   }
 }

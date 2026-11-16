@@ -2,9 +2,11 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db, { generateId } from '../db.js';
+import { syncUpcomingPaymentNotifications } from '../services/paymentReminders.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'voix_erp_super_secure_jwt_token_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'voix_erp_dev_secret_key_2026');
+if (!JWT_SECRET) throw new Error('JWT_SECRET must be set before starting the API in production.');
 
 export const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -12,7 +14,7 @@ export const authenticateToken = (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'Authentication required' });
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) return res.status(403).json({ message: 'Session expired or invalid' });
+    if (err) return res.status(401).json({ message: 'Session expired or invalid' });
     req.user = decoded;
     next();
   });
@@ -78,8 +80,30 @@ router.patch('/staff/:id/role', authenticateToken, requireRoles(['GM', 'HR', 'Ma
 });
 
 router.get('/notifications', authenticateToken, (req, res) => {
-  const notifs = db.prepare(`SELECT * FROM notifications WHERE user_id = ? AND is_read = 0 ORDER BY created_at DESC`).all(req.user.id);
+  // Free instances may sleep between scheduled sweeps; refresh due-payment alerts
+  // whenever a signed-in user opens the notification feed.
+  syncUpcomingPaymentNotifications(req.io);
+  const notifs = db.prepare(`
+    SELECT * FROM notifications
+    WHERE user_id = ? AND is_read = 0
+    ORDER BY created_at DESC, id DESC
+    LIMIT 50
+  `).all(req.user.id);
   res.json(notifs);
+});
+
+router.patch('/notifications/:id/read', authenticateToken, (req, res) => {
+  const result = db.prepare(`
+    UPDATE notifications SET is_read = 1
+    WHERE id = ? AND user_id = ?
+  `).run(req.params.id, req.user.id);
+  if (result.changes === 0) return res.status(404).json({ message: 'Notification not found.' });
+  res.json({ message: 'Notification marked as read.' });
+});
+
+router.patch('/notifications/read-all', authenticateToken, (req, res) => {
+  db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0').run(req.user.id);
+  res.json({ message: 'Notifications marked as read.' });
 });
 
 router.patch('/profile', authenticateToken, (req, res) => {

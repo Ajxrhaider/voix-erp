@@ -1,7 +1,6 @@
 import React, { createContext, useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
-
-const BACKEND_ENDPOINT = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { SOCKET_ENDPOINT, apiUrl } from '../utils/api';
 export const AppContext = createContext();
 
 export function AppProvider({ children }) {
@@ -67,16 +66,17 @@ export function AppProvider({ children }) {
   }, [user]);
 
   const authFetch = useCallback(async (route, config = {}) => {
-    const headers = {
-      ...(tokenRef.current ? { 'Authorization': `Bearer ${tokenRef.current}` } : {}),
-      ...(config.headers || {})
-    };
-    
-    if (!(config.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-    else delete headers['Content-Type'];
+    const headers = new Headers(config.headers || {});
+    if (tokenRef.current) headers.set('Authorization', `Bearer ${tokenRef.current}`);
 
-    const response = await fetch(`${BACKEND_ENDPOINT}${route}`, { ...config, headers });
-    if (response.status === 401 || response.status === 403) logout();
+    if (config.body instanceof FormData) {
+      headers.delete('Content-Type');
+    } else if (config.body !== undefined && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+
+    const response = await fetch(apiUrl(route), { ...config, headers });
+    if (response.status === 401) logout();
     return response;
   }, [logout]);
 
@@ -122,7 +122,7 @@ export function AppProvider({ children }) {
 
     // Connect socket ONLY if it doesn't already exist
     if (!socketRef.current) {
-      socketRef.current = io(BACKEND_ENDPOINT);
+      socketRef.current = io(SOCKET_ENDPOINT, { withCredentials: true });
       socketRef.current.on('erp-data-changed', () => {
         refreshSystemData();
       });
