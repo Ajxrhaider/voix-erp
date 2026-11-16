@@ -83,7 +83,7 @@ export default function SalesDashboard() {
       {/* 1. BITRIX24 PIPELINE VIEW */}
       <div className="space-y-4">
         <div className="flex justify-between items-center">
-          <h2 className="text-base font-black uppercase text-white tracking-wider flex items-center gap-2">
+          <h2 className="text-base font-black uppercase text-slate-900 tracking-wider flex items-center gap-2">
             <Radio className="w-4 h-4 text-teal-400 animate-pulse" /> Direct Sales Funnel
           </h2>
         </div>
@@ -198,7 +198,7 @@ export default function SalesDashboard() {
             <Upload className="w-3.5 h-3.5 text-teal-400" /> Database CSV Bulk Refresher
           </h3>
           <p className="text-[10px] text-slate-400 leading-normal">Paste your raw Excel row matrix directly into the parsing compiler downstream. Columns must align exactly: <code className="text-teal-400 font-mono font-bold">id,name,email,phone,location,plan,balance</code></p>
-          <textarea rows="5" placeholder="id,name,email,phone,location,plan,balance&#10;CUST-101,John Doe,john@voix.net,0801,Abuja,Premium 30Mbps,0" value={rawCsvText} onChange={e => setRawCsvText(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-white font-mono placeholder:text-slate-700 focus:outline-none focus:border-teal-500 text-[11px]" />
+          <textarea rows="5" placeholder="id,name,email,phone,location,plan,balance&#10;CUST-101,John Doe,john@voix.net,0801,Abuja,Premium 30Mbps,0" value={rawCsvText} onChange={e => setRawCsvText(e.target.value)} className="w-full bg-slate-950 border border-slate-850 rounded p-2 text-white font-mono placeholder:text-slate-400 focus:outline-none focus:border-teal-500 text-[11px]" />
           <button onClick={handleCsvBulkUpload} className="w-full py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white font-bold rounded uppercase tracking-wider flex items-center justify-center gap-1">
             <Database className="w-3.5 h-3.5" /> Compile Structural Rows
           </button>

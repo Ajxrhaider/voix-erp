@@ -3,6 +3,15 @@ import { AppContext } from '../context/AppContext';
 import ModuleLayout from '../components/layout/ModuleLayout';
 import { Wrench, CheckSquare, PackagePlus, Trash2 } from 'lucide-react';
 
+const parseMaterials = (value) => {
+  try {
+    const materials = JSON.parse(value || '[]');
+    return Array.isArray(materials) ? materials : [];
+  } catch {
+    return [];
+  }
+};
+
 export default function WorkOrders() {
   const { workOrders, inventory, teams, authFetch, refreshSystemData } = useContext(AppContext);
   const [isMatReqModalOpen, setIsMatReqModalOpen] = useState(false);
@@ -14,6 +23,7 @@ export default function WorkOrders() {
   
   const [selectedItem, setSelectedItem] = useState('');
   const [selectedQty, setSelectedQty] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleOpenReq = (wo) => {
     setActiveWO(wo);
@@ -23,10 +33,27 @@ export default function WorkOrders() {
   };
 
   const handleAddMaterialToCart = (stateSetter, stateData, listKey) => {
-    if (!selectedItem || !selectedQty) return;
+    const quantity = Number(selectedQty);
     const invItem = inventory.find(i => i.id === selectedItem);
-    const newEntry = { itemId: invItem.id, itemName: invItem.item_name, qty: parseInt(selectedQty) };
+    if (!invItem || !Number.isInteger(quantity) || quantity < 1) {
+      setErrorMessage('Select an inventory item and enter a positive whole-number quantity.');
+      return;
+    }
+    if (listKey === 'leftover_materials') {
+      const issuedQuantity = parseMaterials(activeWO?.assigned_materials)
+        .filter(item => item.itemId === invItem.id)
+        .reduce((total, item) => total + Number(item.qty || 0), 0);
+      const alreadyListed = stateData[listKey]
+        .filter(item => item.itemId === invItem.id)
+        .reduce((total, item) => total + Number(item.qty || 0), 0);
+      if (quantity + alreadyListed > issuedQuantity) {
+        setErrorMessage(`Only ${Math.max(0, issuedQuantity - alreadyListed)} ${invItem.item_name} unit(s) were issued to this work order.`);
+        return;
+      }
+    }
+    const newEntry = { itemId: invItem.id, itemName: invItem.item_name, qty: quantity };
     stateSetter({ ...stateData, [listKey]: [...stateData[listKey], newEntry] });
+    setErrorMessage('');
     setSelectedItem(''); setSelectedQty('');
   };
 
@@ -35,21 +62,45 @@ export default function WorkOrders() {
     stateSetter({ ...stateData, [listKey]: newList });
   };
 
+  const readResponse = async (response, fallback) => {
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message || fallback);
+    return body;
+  };
+
   const handleSubmitReq = async (e) => {
     e.preventDefault();
-    if (reqData.materials_list.length === 0) return alert("Please add at least one material to the request list.");
-    await authFetch('/api/inventory/requisitions', { method: 'POST', body: JSON.stringify(reqData) });
-    setIsMatReqModalOpen(false);
-    refreshSystemData();
-    alert(`Materials Requisition generated and linked to ${activeWO.id}. Awaiting HR/GM approval before Inventory issuance.`);
+    if (reqData.materials_list.length === 0) {
+      setErrorMessage('Please add at least one material to the request list.');
+      return;
+    }
+    setErrorMessage('');
+    try {
+      const response = await authFetch('/api/inventory/requisitions', { method: 'POST', body: JSON.stringify(reqData) });
+      await readResponse(response, 'Materials requisition could not be submitted.');
+      setIsMatReqModalOpen(false);
+      await refreshSystemData();
+      alert(`Materials requisition linked to ${activeWO.id} and sent for approval.`);
+    } catch (error) {
+      setErrorMessage(error.message || 'Materials requisition could not be submitted.');
+    }
   };
 
   const handleFulfill = async (e) => {
     e.preventDefault();
-    await authFetch(`/api/tickets/work-orders/${activeWO.id}/complete`, { method: 'PATCH', body: JSON.stringify(fulfillData) });
-    setIsFulfillModalOpen(false);
-    refreshSystemData();
+    setErrorMessage('');
+    try {
+      const response = await authFetch(`/api/tickets/work-orders/${encodeURIComponent(activeWO.id)}/complete`, { method: 'PATCH', body: JSON.stringify(fulfillData) });
+      await readResponse(response, 'Work order could not be completed.');
+      setIsFulfillModalOpen(false);
+      await refreshSystemData();
+    } catch (error) {
+      setErrorMessage(error.message || 'Work order could not be completed.');
+    }
   };
+
+  const returnableItemIds = new Set(parseMaterials(activeWO?.assigned_materials).map(item => item.itemId).filter(Boolean));
+  const returnableInventory = inventory.filter(item => returnableItemIds.has(item.id));
 
   return (
     <ModuleLayout
@@ -57,6 +108,7 @@ export default function WorkOrders() {
       subtitle="Track assigned dispatches and manage material allocations"
       icon={<Wrench className="w-6 h-6" />}
     >
+      {errorMessage && <div role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{errorMessage}</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
         {workOrders.map(wo => {
           const team = teams.find(t => t.id === wo.team_id);
@@ -100,6 +152,7 @@ export default function WorkOrders() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-base sm:text-lg border-b border-slate-200 pb-2 mb-4 leading-tight text-slate-900">Requisition Materials for {activeWO.id}</h3>
+            {errorMessage && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{errorMessage}</div>}
             <form onSubmit={handleSubmitReq} className="space-y-4">
               <div>
                 <label className="text-[10px] font-bold text-slate-900 block mb-1">Purpose / Justification</label>
@@ -143,6 +196,7 @@ export default function WorkOrders() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-base sm:text-lg border-b border-slate-200 pb-2 mb-4 text-slate-900">Complete Work Order {activeWO.id}</h3>
+            {errorMessage && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{errorMessage}</div>}
             <form onSubmit={handleFulfill} className="space-y-4">
               
               <div className="bg-amber-50 p-3 sm:p-4 rounded-lg border border-amber-200">
@@ -150,7 +204,7 @@ export default function WorkOrders() {
                 <div className="flex flex-col sm:flex-row gap-2 mb-3">
                   <select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} className="w-full border border-amber-300 p-2.5 sm:p-2 rounded-lg sm:rounded text-sm bg-white text-slate-900 font-bold">
                     <option value="">Select Leftover Item...</option>
-                    {inventory.map(i => <option key={i.id} value={i.id}>{i.item_name}</option>)}
+                    {returnableInventory.map(i => <option key={i.id} value={i.id}>{i.item_name} (issued: {parseMaterials(activeWO.assigned_materials).filter(material => material.itemId === i.id).reduce((total, material) => total + Number(material.qty || 0), 0)})</option>)}
                   </select>
                   <input type="number" min="1" placeholder="Qty" value={selectedQty} onChange={e => setSelectedQty(e.target.value)} className="w-full sm:w-24 border border-amber-300 p-2.5 sm:p-2 rounded-lg sm:rounded text-sm bg-white text-slate-900 placeholder-slate-400 font-mono font-bold" />
                 </div>

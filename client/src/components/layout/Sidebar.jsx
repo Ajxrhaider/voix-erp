@@ -10,9 +10,9 @@ export default function Sidebar({ isMobileMenuOpen, setIsMobileMenuOpen }) {
   const allNavItems = [
     { name: 'Dashboard', path: '/', roles: ['All'] },
     { name: 'Sales Pipeline', path: '/sales', roles: ['Sales', 'Management', 'GM', 'Dev'] },
-    { name: 'Deployments', path: '/deployments', roles: ['Sales', 'NOC', 'Fiber', 'Management', 'GM', 'Dev'] },
-    { name: 'CRM Profiles', path: '/customers', roles: ['Customer Service', 'Management', 'GM', 'Accounting', 'Dev'] },
-    { name: 'Customer Service', path: '/cs', roles: ['Customer Service', 'Management', 'Dev'] },
+    { name: 'Deployments', path: '/deployments', roles: ['Sales', 'NOC', 'HOD NOC', 'Fiber', 'HOD Fiber', 'Management', 'GM', 'Dev'] },
+    { name: 'CRM Profiles', path: '/customers', roles: ['Customer Service', 'Management', 'GM', 'Accounting', 'Admin', 'Dev'] },
+    { name: 'Customer Service', path: '/cs', roles: ['Customer Service', 'NOC', 'Management', 'GM', 'Dev'] },
     { name: 'NOC Desk', path: '/noc', roles: ['NOC', 'HOD NOC', 'Management', 'GM', 'Dev'] },
     { name: 'Fiber Teams', path: '/fiber', roles: ['Fiber', 'HOD Fiber', 'NOC', 'Management', 'GM', 'Dev'] },
     { name: 'Work Orders', path: '/work-orders', roles: ['Fiber', 'HOD Fiber', 'NOC', 'Customer Service', 'Management', 'Dev'] },

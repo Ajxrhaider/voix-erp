@@ -103,7 +103,7 @@ export default function CRMModule() {
   const activeCustomer = customers.find(c => c.id === selectedProfileId);
 
   return (
-    <div className="space-y-6 text-slate-100 font-sans">
+    <div className="space-y-6 font-sans">
       {/* Tab Navigation header */}
       <div className="flex border-b border-slate-800 space-x-4 pb-2">
         {['profiles', 'queries', 'deployments'].map((t) => (

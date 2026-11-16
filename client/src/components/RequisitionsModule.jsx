@@ -1,15 +1,15 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import { ShoppingCart, CheckCircle2, Clock } from 'lucide-react';
+import { apiUrl } from '../utils/api';
 
 export default function RequisitionsModule() {
   const { requisitions, user, token } = useContext(AppContext);
   const [form, setForm] = useState({ department: '', item: '', quantity: 1, estimatedCost: '' });
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await fetch(`${API_URL}/api/requisitions`, {
+    await fetch(apiUrl('/api/requisitions'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(form)

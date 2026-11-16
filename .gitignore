@@ -12,6 +12,7 @@ out/
 
 # Database files
 *.db
+*.db-*
 *.sqlite
 *.sqlite-journal
 

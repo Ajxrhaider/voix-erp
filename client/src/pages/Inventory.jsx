@@ -7,20 +7,40 @@ export default function Inventory() {
   const { inventory, requisitions, authFetch, refreshSystemData, hasRole } = useContext(AppContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({ item_name: '', category: 'Active Equipment', qty: '', unit_cost: '', min_alert_qty: 5 });
+  const [errorMessage, setErrorMessage] = useState('');
 
   const pendingIssuances = requisitions.filter(r => r.approval_stage === 'Pending Inventory' && r.type === 'Materials');
 
+  const readResponse = async (response, fallback) => {
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message || fallback);
+    return body;
+  };
+
   const handleAddItem = async (e) => {
     e.preventDefault();
-    await authFetch('/api/inventory', { method: 'POST', body: JSON.stringify(formData) });
-    setIsModalOpen(false);
-    refreshSystemData();
+    setErrorMessage('');
+    try {
+      const response = await authFetch('/api/inventory', { method: 'POST', body: JSON.stringify(formData) });
+      await readResponse(response, 'Inventory stock could not be added.');
+      setIsModalOpen(false);
+      setFormData({ item_name: '', category: 'Active Equipment', qty: '', unit_cost: '', min_alert_qty: 5 });
+      await refreshSystemData();
+    } catch (error) {
+      setErrorMessage(error.message || 'Inventory stock could not be added.');
+    }
   };
 
   const handleIssueMaterials = async (id) => {
-    await authFetch(`/api/inventory/requisitions/${id}/approve`, { method: 'PATCH' });
-    alert("Materials successfully issued and allocated to the Work Order.");
-    refreshSystemData();
+    setErrorMessage('');
+    try {
+      const response = await authFetch(`/api/inventory/requisitions/${encodeURIComponent(id)}/approve`, { method: 'PATCH' });
+      const body = await readResponse(response, 'Materials could not be issued.');
+      await refreshSystemData();
+      alert(body.message || 'Materials issued and inventory stock updated.');
+    } catch (error) {
+      setErrorMessage(error.message || 'Materials could not be issued.');
+    }
   };
 
   return (
@@ -34,6 +54,7 @@ export default function Inventory() {
         )
       }
     >
+      {errorMessage && <div role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{errorMessage}</div>}
       {pendingIssuances.length > 0 && hasRole(['Inventory', 'Management', 'GM', 'Dev']) && (
         <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 sm:p-5 w-full">
           <h3 className="font-bold text-blue-900 mb-3 flex items-center gap-2"><ArrowRightSquare className="w-5 h-5"/> Pending Material Issuances</h3>
@@ -91,6 +112,7 @@ export default function Inventory() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-md max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-2 text-slate-900 border-b border-slate-200 pb-2">Procure New Stock</h3>
+            {errorMessage && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{errorMessage}</div>}
             <p className="text-[11px] sm:text-xs text-amber-900 font-bold mb-4 bg-amber-50 p-3 rounded-lg border border-amber-300 leading-tight">Strict Rule: You are authorized as Accounting. This action automatically posts the total cost to the Accounting Expense Ledger.</p>
             <form onSubmit={handleAddItem} className="space-y-4">
               <div><label className="text-[10px] font-bold text-slate-900 block mb-1">Item Name</label><input type="text" required placeholder="Item Name" onChange={e => setFormData({...formData, item_name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg text-sm bg-slate-50 text-slate-900 placeholder-slate-400" /></div>

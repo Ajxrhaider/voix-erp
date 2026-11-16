@@ -1,6 +1,7 @@
 import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { AppContext } from '../context/AppContext';
 import ModuleLayout from '../components/layout/ModuleLayout';
+import { canEscalateTicket } from '../utils/ticketFilters.js';
 import { Headset, Plus, AlertTriangle, FileText, Printer, Trash2, CreditCard } from 'lucide-react';
 
 export default function CustomerService() {
@@ -11,6 +12,7 @@ export default function CustomerService() {
   const [closingTicket, setClosingTicket] = useState(null);
   const [ccReports, setCcReports] = useState([]);
   const [viewingReport, setViewingReport] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
   
   const [formData, setFormData] = useState({
     date_received: new Date().toISOString().split('T')[0], time_received: '', customer_ip: '', customer_name: '', query_type: '',
@@ -41,29 +43,61 @@ export default function CustomerService() {
   const [reportData, setReportData] = useState(getInitialReportData());
 
   useEffect(() => {
-    if (activeTab === 'report-history') {
-      authFetch('/api/tickets/cc-reports').then(res => res.json()).then(setCcReports);
-    }
-  }, [activeTab]);
+    if (activeTab !== 'report-history') return undefined;
+    let cancelled = false;
+    authFetch('/api/tickets/cc-reports')
+      .then(async response => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.message || 'Could not load report history.');
+        return body;
+      })
+      .then(reports => { if (!cancelled) setCcReports(Array.isArray(reports) ? reports : []); })
+      .catch(error => { if (!cancelled) setErrorMessage(error.message || 'Could not load report history.'); });
+    return () => { cancelled = true; };
+  }, [activeTab, authFetch]);
+
+  const readResponse = async (response, fallback) => {
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message || fallback);
+    return body;
+  };
 
   const handleCreateTicket = async (e) => {
     e.preventDefault();
-    await authFetch('/api/tickets', { method: 'POST', body: JSON.stringify(formData) });
-    setIsModalOpen(false);
-    refreshSystemData();
+    setErrorMessage('');
+    try {
+      const response = await authFetch('/api/tickets', { method: 'POST', body: JSON.stringify(formData) });
+      await readResponse(response, 'The customer query could not be created.');
+      setIsModalOpen(false);
+      await refreshSystemData();
+    } catch (error) {
+      setErrorMessage(error.message || 'The customer query could not be created.');
+    }
   };
 
   const handleCloseTicket = async (e) => {
     e.preventDefault();
-    await authFetch(`/api/tickets/${closingTicket.id}/close`, { method: 'PATCH', body: JSON.stringify(closingTicket) });
-    setClosingTicket(null);
-    refreshSystemData();
+    setErrorMessage('');
+    try {
+      const response = await authFetch(`/api/tickets/${encodeURIComponent(closingTicket.id)}/close`, { method: 'PATCH', body: JSON.stringify(closingTicket) });
+      await readResponse(response, 'The ticket could not be updated.');
+      setClosingTicket(null);
+      await refreshSystemData();
+    } catch (error) {
+      setErrorMessage(error.message || 'The ticket could not be updated.');
+    }
   };
 
   const handleEscalate = async (id) => {
     if (window.confirm("Are you sure you want to escalate this ticket to Management?")) {
-      await authFetch(`/api/tickets/${id}/escalate`, { method: 'PATCH' });
-      refreshSystemData();
+      setErrorMessage('');
+      try {
+        const response = await authFetch(`/api/tickets/${encodeURIComponent(id)}/escalate`, { method: 'PATCH' });
+        await readResponse(response, 'The ticket could not be escalated.');
+        await refreshSystemData();
+      } catch (error) {
+        setErrorMessage(error.message || 'The ticket could not be escalated.');
+      }
     }
   };
 
@@ -94,10 +128,16 @@ export default function CustomerService() {
 
   const handleSubmitCCReport = async (e) => {
     e.preventDefault();
-    await authFetch('/api/tickets/cc-reports', { method: 'POST', body: JSON.stringify(reportData) });
-    alert("Official Customer Care Activity Report successfully logged.");
-    setReportData(getInitialReportData());
-    setActiveTab('report-history');
+    setErrorMessage('');
+    try {
+      const response = await authFetch('/api/tickets/cc-reports', { method: 'POST', body: JSON.stringify(reportData) });
+      await readResponse(response, 'The Customer Care report could not be saved.');
+      alert('Official Customer Care Activity Report successfully logged.');
+      setReportData(getInitialReportData());
+      setActiveTab('report-history');
+    } catch (error) {
+      setErrorMessage(error.message || 'The Customer Care report could not be saved.');
+    }
   };
 
   const parseChannel = (data) => {
@@ -108,14 +148,20 @@ export default function CustomerService() {
 
   // Payment Logic Engine
   const calculatedDueDate = useMemo(() => {
-    if (!paymentData.date || paymentData.durationMonths === 0) return '';
-    const monthsToAdd = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths) || 1) : paymentData.durationMonths;
-    if (monthsToAdd <= 0) return '';
-    const d = new Date(paymentData.date);
-    if (isNaN(d.getTime())) return '';
-    d.setMonth(d.getMonth() + monthsToAdd);
-    return d.toISOString().split('T')[0];
-  }, [paymentData.date, paymentData.durationMonths, paymentData.customMonths]);
+    const monthsToAdd = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths, 10) || 0) : Number(paymentData.durationMonths);
+    if (!paymentData.date || monthsToAdd <= 0) return '';
+    const linkedCustomer = customers.find(customer => customer.id === paymentData.customer_id);
+    const baseDate = linkedCustomer?.next_due_date && linkedCustomer.next_due_date > paymentData.date
+      ? linkedCustomer.next_due_date
+      : paymentData.date;
+    const [year, month, day] = baseDate.split('-').map(Number);
+    if (!year || !month || !day) return '';
+    const monthIndex = month - 1 + monthsToAdd;
+    const targetYear = year + Math.floor(monthIndex / 12);
+    const targetMonth = ((monthIndex % 12) + 12) % 12;
+    const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+    return `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+  }, [customers, paymentData.customer_id, paymentData.date, paymentData.durationMonths, paymentData.customMonths]);
 
   const calculatedTax = useMemo(() => {
     const gross = parseFloat(paymentData.amount) || 0;
@@ -135,21 +181,32 @@ export default function CustomerService() {
     const monthsNum = paymentData.durationMonths === -1 ? (parseInt(paymentData.customMonths) || 1) : paymentData.durationMonths;
     const custType = customers.find(c => c.id === paymentData.customer_id)?.customer_type || 'FTTH';
 
-    await authFetch('/api/accounting/ledger', { method: 'POST', body: JSON.stringify({
-      entry_date: paymentData.date, inv_no: paymentData.reference || `REC-${Date.now().toString().slice(-6)}`,
-      customer_name: paymentData.customer_name, customer_type: custType, type: 'Income', category: 'Monthly Bandwidth Subscription',
-      description: `Subscription Renewal (${monthsNum} Months)`, gross_amount: calculatedTax.gross, is_vat_exempt: paymentData.isVatExempt ? 1 : 0,
-      vat_rate: paymentData.isVatExempt ? 0 : 7.5, vat_amount: calculatedTax.vat, net_amount: calculatedTax.net, payment_mode: paymentData.method,
-      duration_months: monthsNum, next_due_date: calculatedDueDate, received_by: paymentData.receivedBy, reference_id: paymentData.customer_id
-    })});
-
-    await authFetch(`/api/crm/customers/${paymentData.customer_id}/payment`, { method: 'PATCH', body: JSON.stringify({
-      amount_paid: paymentData.amount, last_payment_date: paymentData.date, next_due_date: calculatedDueDate
-    })});
+    const response = await authFetch(`/api/crm/customers/${paymentData.customer_id}/payments`, {
+      method: 'POST',
+      body: JSON.stringify({
+        entry_date: paymentData.date,
+        inv_no: paymentData.reference || undefined,
+        customer_name: paymentData.customer_name,
+        customer_type: custType,
+        category: 'Monthly Bandwidth Subscription',
+        description: `Subscription renewal (${monthsNum || 'one-off'} month${monthsNum === 1 ? '' : 's'})`,
+        gross_amount: calculatedTax.gross,
+        is_vat_exempt: paymentData.isVatExempt ? 1 : 0,
+        vat_rate: paymentData.isVatExempt ? 0 : 7.5,
+        vat_amount: calculatedTax.vat,
+        net_amount: calculatedTax.net,
+        payment_mode: paymentData.method,
+        duration_months: monthsNum,
+        next_due_date: calculatedDueDate,
+        received_by: paymentData.receivedBy || user?.fullname || 'Customer Service'
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return alert(result.message || 'Payment could not be recorded.');
 
     setIsPaymentModalOpen(false);
     setPaymentData({ customer_id: '', customer_name: '', date: new Date().toISOString().split('T')[0], amount: '', method: 'Bank Transfer', reference: '', durationMonths: 1, customMonths: '', isVatExempt: false, vatCalculationType: 'INCLUSIVE', receivedBy: user?.fullname || 'Customer Service' });
-    alert('Payment successfully recorded and posted to the ledger.');
+    alert('Payment saved to the customer profile and accounting ledger.');
     refreshSystemData();
   };
 
@@ -174,6 +231,7 @@ export default function CustomerService() {
         )
       }
     >
+      {errorMessage && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{errorMessage}</div>}
       {/* TAB: ACTIVE QUERIES */}
       {activeTab === 'queries' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
@@ -181,7 +239,7 @@ export default function CustomerService() {
             <div key={t.id} className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between transition hover:shadow-md">
               <div>
                 <div className="flex items-center gap-2 mb-1 justify-between">
-                  <p className="font-mono text-[11px] sm:text-xs font-bold text-slate-600">{t.id} • {t.query_type || t.category}</p>
+                  <p className="font-mono text-[11px] sm:text-xs font-bold text-slate-600">{t.external_ref || t.id} • {t.query_type || t.category}</p>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${t.status === 'Resolved' ? 'bg-emerald-100 text-emerald-900' : 'bg-amber-100 text-amber-900'}`}>{t.status}</span>
                 </div>
                 <h3 className="font-bold text-slate-900 text-lg mb-1 leading-tight">{t.customer_name}</h3>
@@ -193,11 +251,11 @@ export default function CustomerService() {
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-slate-200">
-                {t.status !== 'Resolved' && t.status !== 'Escalated' && (
+                {canEscalateTicket(t) && (
                   <button onClick={() => handleEscalate(t.id)} className="bg-slate-200 hover:bg-slate-300 text-slate-900 font-bold px-4 py-2.5 sm:py-2 rounded-lg text-xs transition flex items-center justify-center gap-1 shadow-sm w-full sm:w-auto"><AlertTriangle className="w-3.5 h-3.5"/> Escalate</button>
                 )}
                 {(t.status === 'Resolved' || hasRole(['Management', 'Dev'])) && (
-                  <button onClick={() => setClosingTicket(t)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 sm:py-2 rounded-lg text-xs transition shadow-sm w-full sm:w-auto">Close Query</button>
+                  <button onClick={() => { setErrorMessage(''); setClosingTicket({ ...t, status: t.status === 'Resolved' ? 'Closed' : 'Resolved', resolution_datetime: '', mttr: '', resolution_by: '', customer_feedback: '', closure_notes: '' }); }} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 sm:py-2 rounded-lg text-xs transition shadow-sm w-full sm:w-auto">Close Query</button>
                 )}
               </div>
             </div>
@@ -211,6 +269,7 @@ export default function CustomerService() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900 flex items-center gap-2"><CreditCard className="w-5 h-5 text-emerald-600"/> Record Subscription Payment</h3>
+            {errorMessage && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{errorMessage}</div>}
             <form onSubmit={handleRecordPayment} className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="sm:col-span-2">
                 <label className="text-[10px] font-bold text-slate-900 block mb-1">Search Customer Profile</label>
@@ -432,6 +491,7 @@ export default function CustomerService() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-3xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Log Customer Query</h3>
+            {errorMessage && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{errorMessage}</div>}
             <form onSubmit={handleCreateTicket} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Customer Name (Optional)</label><input type="text" placeholder="Customer Name" onChange={e => setFormData({...formData, customer_name: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Date Received</label><input type="date" required value={formData.date_received} onChange={e => setFormData({...formData, date_received: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900" /></div>
@@ -465,8 +525,9 @@ export default function CustomerService() {
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4 z-50">
           <div className="bg-white rounded-xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
             <h3 className="font-bold text-lg mb-4 border-b border-slate-200 pb-2 text-slate-900">Close Ticket: {closingTicket.id}</h3>
+            {errorMessage && <div role="alert" className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">{errorMessage}</div>}
             <form onSubmit={handleCloseTicket} className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-sm">
-              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Query Status</label><select onChange={e => setClosingTicket({...closingTicket, status: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option value="Resolved">Resolved</option><option value="Closed">Closed</option></select></div>
+              <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Query Status</label><select required value={closingTicket.status} onChange={e => setClosingTicket({...closingTicket, status: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option value="Resolved">Resolved</option><option value="Closed">Closed</option></select></div>
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Resolution Date/Time</label><input type="datetime-local" onChange={e => setClosingTicket({...closingTicket, resolution_datetime: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900" /></div>
               
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Mean Time to Resolve (MTTR)</label><input type="text" placeholder="e.g. 2 Hours" onChange={e => setClosingTicket({...closingTicket, mttr: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-500" /></div>

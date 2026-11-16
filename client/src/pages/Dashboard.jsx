@@ -2,12 +2,16 @@ import React, { useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import { Link } from 'react-router-dom';
 
+const isActiveTicket = (ticket) => !['closed', 'resolved', 'converted to work order'].includes(String(ticket.status || '').trim().toLowerCase());
+const isActiveWorkOrder = (workOrder) => !['fulfilled', 'closed', 'cancelled', 'canceled'].includes(String(workOrder.status || '').trim().toLowerCase());
+
 export default function Dashboard() {
   const { user, customers, sales, deployments, tickets, workOrders, ledger, hasRole } = useContext(AppContext);
 
   const kpis = {
     activeSubscribers: (customers || []).filter(c => c.status === 'Active').length,
-    openTickets: (tickets || []).filter(t => t.status === 'Open').length,
+    openTickets: (tickets || []).filter(isActiveTicket).length,
+    activeWorkOrders: (workOrders || []).filter(isActiveWorkOrder).length,
     pendingDeployments: (deployments || []).filter(d => d.status !== 'Completed').length,
     pipelineValue: (sales || []).filter(s => s.stage !== 'Closing/Won' && s.stage !== 'Lost').reduce((sum, s) => sum + (s.amount || 0), 0),
     grossIncome: (ledger || []).filter(l => l.type === 'Income').reduce((sum, l) => sum + (l.gross_amount || 0), 0),
@@ -67,7 +71,7 @@ export default function Dashboard() {
               <div className="bg-slate-50 p-4 rounded-lg border">
                 <p className="text-xs font-bold text-slate-500 uppercase">Field Work Orders</p>
                 <p className="text-3xl font-black text-amber-600 mt-2">
-                  {(workOrders || []).filter(w => w.status !== 'Closed').length}
+                  {kpis.activeWorkOrders}
                 </p>
               </div>
             </div>

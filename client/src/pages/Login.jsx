@@ -1,7 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../context/AppContext';
-
-const BACKEND_ENDPOINT = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { apiUrl } from '../utils/api';
 
 export default function Login() {
   // Changed state variable from email to username to align with database fields
@@ -14,7 +13,7 @@ export default function Login() {
     e.preventDefault();
     setError('');
     try {
-      const response = await fetch(`${BACKEND_ENDPOINT}/api/auth/login`, {
+      const response = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -23,7 +22,7 @@ export default function Login() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Invalid credentials');
+        throw new Error(data.message || data.error || 'Invalid credentials');
       }
 
       if (login) {
@@ -61,7 +60,7 @@ export default function Login() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="e.g. admin"
-              className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-voix-600 focus:ring-1 focus:ring-voix-600 transition-colors"
+              className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:border-voix-600 focus:ring-1 focus:ring-voix-600 transition-colors"
               required
             />
           </div>
@@ -75,7 +74,7 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-voix-600 focus:ring-1 focus:ring-voix-600 transition-colors"
+              className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:border-voix-600 focus:ring-1 focus:ring-voix-600 transition-colors"
               required
             />
           </div>

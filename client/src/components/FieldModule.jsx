@@ -59,7 +59,7 @@ export default function FieldModule() {
   const teamWOs = workOrders.filter(wo => wo.teamId === selectedTeam);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-slate-100 font-sans">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans">
       <div className="lg:col-span-5 space-y-6">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex items-center space-x-2"><User className="w-5 h-5 text-teal-400" /><h3 className="text-lg font-bold text-white">Select Active Squad</h3></div>
@@ -113,7 +113,7 @@ export default function FieldModule() {
                   </div>
                 </div>
                 {/* DAILY ACTIVITY REPORT - Add this inside your FieldModule return statement */}
-                <div className="mt-8 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                <div className="mt-8 bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-slate-900">
                   <h3 className="font-bold text-slate-800 mb-4">End of Day Activity Report</h3>
                   <form className="grid grid-cols-1 md:grid-cols-3 gap-4" onSubmit={(e) => { e.preventDefault(); alert("Report submitted successfully."); }}>
                     <input type="date" className="border p-2 rounded text-sm w-full" required />
