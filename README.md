@@ -28,6 +28,8 @@ The importer and end-to-end workflow tests use temporary SQLite databases and do
 
 In local development, the first empty database is seeded with `admin` / `admin123`. Change that password immediately. Production startup requires a private `JWT_SECRET` and, when the database is empty, an `INITIAL_ADMIN_PASSWORD` so the published default credentials are never used.
 
+Authenticated sessions expire after **10 minutes without user activity**. Activity is shared across open tabs; when the session expires, the app signs the user out and requires a fresh login. The API also checks and revokes idle sessions so a stale browser token cannot keep using protected endpoints. Existing users will need to sign in once after this session change is deployed because older tokens do not include the new server-side session record.
+
 ## Deployment settings
 
 ### Vercel frontend
