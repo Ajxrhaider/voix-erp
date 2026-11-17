@@ -36,6 +36,13 @@ db.exec(`
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    last_activity_ms INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    revoked_at DATETIME
+  );
   CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
     voix_no TEXT UNIQUE,
@@ -295,6 +302,7 @@ const migrateSpreadsheetColumns = () => {
   addColumn('notifications', 'reference_id', 'TEXT');
 
   db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_user_revoked ON user_sessions(user_id, revoked_at);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_external_ref
       ON tickets(external_ref) WHERE external_ref IS NOT NULL AND external_ref <> '';
     CREATE UNIQUE INDEX IF NOT EXISTS idx_deployments_external_ref
@@ -321,7 +329,7 @@ export function generateId(seqName, prefix) {
   return `${prefix}-${String(result.next_val).padStart(3, '0')}`;
 }
 
-const sequences = ['staff', 'customer', 'sale', 'deployment', 'ticket', 'work_order', 'team', 'inventory', 'requisition', 'report', 'cc_report'];
+const sequences = ['staff', 'customer', 'sale', 'deployment', 'ticket', 'work_order', 'team', 'inventory', 'requisition', 'report', 'cc_report', 'auth_session'];
 const insertSequence = db.prepare('INSERT OR IGNORE INTO id_sequences (seq_name, next_val) VALUES (?, 100)');
 const initializeSequences = db.transaction(() => sequences.forEach((sequence) => insertSequence.run(sequence)));
 initializeSequences();

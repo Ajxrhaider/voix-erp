@@ -12,6 +12,7 @@ process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'voix_test_workflow_secret';
 
 const { default: db } = await import('../db.js');
+const { default: authRoutes } = await import('./auth.js');
 const { default: salesRoutes } = await import('./sales.js');
 const { default: deploymentRoutes } = await import('./deployments.js');
 const { default: customerRoutes } = await import('./customers.js');
@@ -25,6 +26,7 @@ app.use((req, _res, next) => {
   req.io = { emit() {} };
   next();
 });
+app.use('/api/auth', authRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/deployments', deploymentRoutes);
 app.use('/api/crm/customers', customerRoutes);
@@ -38,14 +40,15 @@ await new Promise((resolve, reject) => {
   server.once('error', reject);
 });
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
-const token = jwt.sign(
-  { id: 'EMP-000', username: 'admin', roles: ['Dev'], fullname: 'Workflow Test Admin' },
-  process.env.JWT_SECRET
-);
-const nocToken = jwt.sign(
-  { id: 'EMP-NOC', username: 'noc.operator', roles: ['NOC'], fullname: 'NOC Operator' },
-  process.env.JWT_SECRET
-);
+let testSessionSequence = 0;
+function createTestToken(claims) {
+  const sessionId = `TEST-SESSION-${++testSessionSequence}`;
+  db.prepare('INSERT INTO user_sessions (id, user_id, last_activity_ms) VALUES (?, ?, ?)')
+    .run(sessionId, claims.id, Date.now());
+  return jwt.sign({ ...claims, sid: sessionId }, process.env.JWT_SECRET);
+}
+const token = createTestToken({ id: 'EMP-000', username: 'admin', roles: ['Dev'], fullname: 'Workflow Test Admin' });
+const nocToken = createTestToken({ id: 'EMP-000', username: 'noc.operator', roles: ['NOC'], fullname: 'NOC Operator' });
 
 async function api(pathname, { method = 'GET', body, authToken = token } = {}) {
   return fetch(`${baseUrl}${pathname}`, {
@@ -62,6 +65,41 @@ after(async () => {
   await new Promise((resolve) => server.close(resolve));
   db.close();
   rmSync(tempDirectory, { recursive: true, force: true });
+});
+
+test('auth sessions renew on activity and expire or revoke after ten minutes of inactivity', async () => {
+  const loginResponse = await api('/api/auth/login', {
+    method: 'POST',
+    authToken: '',
+    body: { username: 'admin', password: 'admin123' }
+  });
+  assert.equal(loginResponse.status, 200);
+  const login = await loginResponse.json();
+  const decoded = jwt.verify(login.token, process.env.JWT_SECRET);
+  assert.ok(decoded.sid);
+
+  const sessionBeforeActivity = db.prepare('SELECT * FROM user_sessions WHERE id = ?').get(decoded.sid);
+  assert.ok(sessionBeforeActivity);
+  const activityResponse = await api('/api/auth/activity', { method: 'POST', authToken: login.token });
+  assert.equal(activityResponse.status, 200);
+  assert.ok(db.prepare('SELECT last_activity_ms FROM user_sessions WHERE id = ?').get(decoded.sid).last_activity_ms >= sessionBeforeActivity.last_activity_ms);
+
+  db.prepare('UPDATE user_sessions SET last_activity_ms = ? WHERE id = ?')
+    .run(Date.now() - (10 * 60 * 1000) - 1, decoded.sid);
+  const expiredRequest = await api('/api/deployments', { authToken: login.token });
+  assert.equal(expiredRequest.status, 401);
+  assert.ok(db.prepare('SELECT revoked_at FROM user_sessions WHERE id = ?').get(decoded.sid).revoked_at);
+
+  const secondLoginResponse = await api('/api/auth/login', {
+    method: 'POST',
+    authToken: '',
+    body: { username: 'admin', password: 'admin123' }
+  });
+  const secondLogin = await secondLoginResponse.json();
+  const secondSessionId = jwt.verify(secondLogin.token, process.env.JWT_SECRET).sid;
+  const logoutResponse = await api('/api/auth/logout', { method: 'POST', authToken: secondLogin.token });
+  assert.equal(logoutResponse.status, 200);
+  assert.ok(db.prepare('SELECT revoked_at FROM user_sessions WHERE id = ?').get(secondSessionId).revoked_at);
 });
 
 test('sales win creates one deployment and completion records the initial payment on the customer profile', async () => {

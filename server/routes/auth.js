@@ -5,6 +5,7 @@ import db, { generateId } from '../db.js';
 import { syncUpcomingPaymentNotifications } from '../services/paymentReminders.js';
 
 const router = express.Router();
+const SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'voix_erp_dev_secret_key_2026');
 if (!JWT_SECRET) throw new Error('JWT_SECRET must be set before starting the API in production.');
 
@@ -15,6 +16,24 @@ export const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) return res.status(401).json({ message: 'Session expired or invalid' });
+    if (!decoded.sid) return res.status(401).json({ message: 'Session expired. Please sign in again.' });
+
+    const session = db.prepare(`
+      SELECT id, user_id, last_activity_ms, revoked_at
+      FROM user_sessions
+      WHERE id = ? AND user_id = ?
+    `).get(decoded.sid, decoded.id);
+    if (!session || session.revoked_at) {
+      return res.status(401).json({ message: 'Session expired. Please sign in again.' });
+    }
+
+    const lastActivity = Number(session.last_activity_ms);
+    if (!Number.isFinite(lastActivity) || lastActivity <= 0 || Date.now() - lastActivity >= SESSION_IDLE_TIMEOUT_MS) {
+      db.prepare('UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND revoked_at IS NULL')
+        .run(session.id);
+      return res.status(401).json({ message: 'Your session expired after 10 minutes of inactivity. Please sign in again.' });
+    }
+
     req.user = decoded;
     next();
   });
@@ -48,9 +67,41 @@ router.post('/login', (req, res) => {
   if (!user.is_active) return res.status(403).json({ message: 'Profile is deactivated. Contact HR.' });
 
   const rolesArray = JSON.parse(user.roles || '[]');
-  const token = jwt.sign({ id: user.id, username: user.username, roles: rolesArray, fullname: user.fullname, department: user.department }, JWT_SECRET, { expiresIn: '24h' });
+  const sessionId = generateId('auth_session', 'SES');
+  const now = Date.now();
+  db.prepare('DELETE FROM user_sessions WHERE revoked_at IS NOT NULL OR last_activity_ms < ?')
+    .run(now - (30 * 24 * 60 * 60 * 1000));
+  db.prepare('INSERT INTO user_sessions (id, user_id, last_activity_ms) VALUES (?, ?, ?)')
+    .run(sessionId, user.id, now);
+  const token = jwt.sign({
+    id: user.id,
+    username: user.username,
+    roles: rolesArray,
+    fullname: user.fullname,
+    department: user.department,
+    sid: sessionId
+  }, JWT_SECRET, { expiresIn: '24h' });
 
   res.json({ token, user: { id: user.id, username: user.username, fullname: user.fullname, email: user.email, roles: rolesArray, department: user.department } });
+});
+
+router.post('/activity', authenticateToken, (req, res) => {
+  const now = Date.now();
+  const result = db.prepare(`
+    UPDATE user_sessions
+    SET last_activity_ms = ?
+    WHERE id = ? AND user_id = ? AND revoked_at IS NULL
+  `).run(now, req.user.sid, req.user.id);
+  if (result.changes === 0) return res.status(401).json({ message: 'Session expired. Please sign in again.' });
+  res.json({ last_activity_ms: now });
+});
+
+router.post('/logout', authenticateToken, (req, res) => {
+  db.prepare(`
+    UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND user_id = ? AND revoked_at IS NULL
+  `).run(req.user.sid, req.user.id);
+  res.json({ message: 'Signed out.' });
 });
 
 router.get('/staff', authenticateToken, (req, res) => {
