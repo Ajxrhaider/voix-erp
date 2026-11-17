@@ -86,7 +86,7 @@ router.get('/payment-due', authenticateToken, (req, res) => {
     WHERE next_due_date IS NOT NULL
       AND trim(next_due_date) <> ''
       AND date(next_due_date) <= date(?)
-      AND lower(trim(coalesce(status, 'active'))) NOT IN ('inactive', 'suspended', 'cancelled', 'canceled')
+      AND lower(trim(coalesce(status, ''))) = 'active'
     ORDER BY date(next_due_date) ASC, name COLLATE NOCASE ASC
   `).all(cutoffIso);
   res.json({ notice_days: noticeDays, customers });

@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CreditCard, Plus, Search, Upload, Users, X } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 import ModuleLayout from '../components/layout/ModuleLayout';
@@ -92,6 +92,22 @@ export default function Customers() {
   const [message, setMessage] = useState(null);
   const [formError, setFormError] = useState('');
   const [importSummary, setImportSummary] = useState(null);
+  const [paymentReminderDays, setPaymentReminderDays] = useState(7);
+
+  useEffect(() => {
+    let isCurrent = true;
+    authFetch('/api/crm/customers/payment-due')
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (isCurrent && Number.isInteger(data.notice_days)) {
+          setPaymentReminderDays(data.notice_days);
+        }
+        return null;
+      })
+      .catch(() => {});
+    return () => { isCurrent = false; };
+  }, [authFetch]);
 
   const canManageCustomers = hasRole(['Customer Service', 'Accounting', 'Management', 'GM', 'Admin', 'Dev']);
   const activePaymentCustomer = customers.find((customer) => customer.id === paymentData.customer_id) || activeProfile;
@@ -106,10 +122,10 @@ export default function Customers() {
   }, [customers, searchQuery]);
 
   const dueCustomers = useMemo(() => customers.filter((customer) => {
-    if (String(customer.status || '').toLowerCase() !== 'active') return false;
-    const due = dueLabel(customer.next_due_date);
+    if (String(customer.status || '').trim().toLowerCase() !== 'active') return false;
+    const due = dueLabel(customer.next_due_date, paymentReminderDays);
     return due && (due.text.startsWith('Overdue') || due.text === 'Due today' || due.text.startsWith('Due in '));
-  }), [customers]);
+  }), [customers, paymentReminderDays]);
 
   const loadProfile = useCallback(async (customer) => {
     setActiveProfile(customer);
@@ -323,7 +339,7 @@ export default function Customers() {
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
           <div>
             <p className="font-bold">Payment follow-up: {dueCustomers.length} active account{dueCustomers.length === 1 ? '' : 's'} due or overdue</p>
-            <p className="mt-1 text-xs text-amber-900">In-app reminders are sent to Customer Service, Accounting and management users for accounts due within 7 days or already overdue.</p>
+            <p className="mt-1 text-xs text-amber-900">In-app reminders are sent to Customer Service, Accounting and management users for accounts due within the {paymentReminderDays}-day notice window or already overdue.</p>
           </div>
         </div>
       )}
