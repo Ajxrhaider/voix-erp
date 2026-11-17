@@ -460,3 +460,62 @@ test('ticket dispatch, materials requisition, inventory issue, work-order comple
   assert.equal((await api('/api/teams/fiber-reports')).status, 200);
   assert.equal(db.prepare('SELECT count(*) AS count FROM fiber_splicing_reports WHERE work_order_id = ?').get(fiberWorkOrder.id).count, 1);
 });
+
+test('payment-due endpoint applies the notice window and includes only active accounts', async () => {
+  const originalReminderDays = process.env.PAYMENT_DUE_NOTICE_DAYS;
+  process.env.PAYMENT_DUE_NOTICE_DAYS = '3';
+  try {
+    const dateAtOffset = (days) => {
+      const date = new Date();
+      date.setUTCHours(0, 0, 0, 0);
+      date.setUTCDate(date.getUTCDate() + days);
+      return date.toISOString().slice(0, 10);
+    };
+    const customers = [
+      ['CUST-DUE-ACTIVE', 'Active Due Customer', dateAtOffset(3), 'Active'],
+      ['CUST-DUE-OVERDUE', 'Active Overdue Customer', dateAtOffset(-1), 'Active'],
+      ['CUST-DUE-INACTIVE', 'Inactive Customer', dateAtOffset(1), 'Inactive'],
+      ['CUST-DUE-SUSPENDED', 'Suspended Customer', dateAtOffset(1), 'Suspended'],
+      ['CUST-DUE-EXPIRED', 'Expired Customer', dateAtOffset(1), 'Expired'],
+      ['CUST-DUE-OUTSIDE', 'Outside Window Customer', dateAtOffset(4), 'Active']
+    ];
+    const insertCustomer = db.prepare(`
+      INSERT INTO customers (id, voix_no, name, next_due_date, status)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    for (const [id, name, dueDate, status] of customers) {
+      insertCustomer.run(id, `VN-${id}`, name, dueDate, status);
+    }
+
+    const response = await api('/api/crm/customers/payment-due');
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.notice_days, 3);
+    assert.deepEqual(
+      result.customers.map((customer) => customer.id).sort(),
+      ['CUST-DUE-ACTIVE', 'CUST-DUE-OVERDUE']
+    );
+    assert.equal(db.prepare(`
+      SELECT count(*) AS count FROM notifications
+      WHERE type = 'Payment Due' AND reference_id IN (?, ?)
+    `).get('CUST-DUE-ACTIVE', 'CUST-DUE-OVERDUE').count, 2);
+    assert.equal(db.prepare(`
+      SELECT count(*) AS count FROM notifications
+      WHERE type = 'Payment Due' AND reference_id IN (?, ?, ?)
+    `).get('CUST-DUE-INACTIVE', 'CUST-DUE-SUSPENDED', 'CUST-DUE-EXPIRED').count, 0);
+
+    const feedResponse = await api('/api/auth/notifications');
+    assert.equal(feedResponse.status, 200);
+    const feed = await feedResponse.json();
+    assert.equal(feed.length, 2);
+    assert.ok(feed.every((notification) => notification.type === 'Payment Due'));
+
+    const markReadResponse = await api(`/api/auth/notifications/${feed[0].id}/read`, { method: 'PATCH' });
+    assert.equal(markReadResponse.status, 200);
+    const refreshedFeed = await api('/api/auth/notifications');
+    assert.equal((await refreshedFeed.json()).length, 1);
+  } finally {
+    if (originalReminderDays === undefined) delete process.env.PAYMENT_DUE_NOTICE_DAYS;
+    else process.env.PAYMENT_DUE_NOTICE_DAYS = originalReminderDays;
+  }
+});
