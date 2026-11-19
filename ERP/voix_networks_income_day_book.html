@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOIX NETWORKS - Income & Revenue Day Book</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // VOIX NETWORKS Income Categories & Descriptions
+        const INCOME_CATEGORIES = [
+            "Monthly Bandwidth Subscription",
+            "Installation & Setup Fee",
+            "Equipment & Router Sales",
+            "Dark Fiber Lease",
+            "IP Transit & Dedicated Bandwidth",
+            "Technical Support & SLA Contract",
+            "Miscellaneous Income"
+        ];
+
+        // Sample initial income records for VOIX NETWORKS
+        const INITIAL_INCOME_RECORDS = [
+            {
+                id: 1,
+                date: "2026-08-01",
+                invNo: "INV-VN-2026-101",
+                customerName: "Zenith Tech Park Ltd",
+                customerType: "Enterprise",
+                category: "Monthly Bandwidth Subscription",
+                description: "Dedicated 500Mbps Fiber Internet Subscription (Quarterly)",
+                grossAmount: 1800000,
+                isVatExempt: false,
+                vatRate: 7.5,
+                vatAmount: 125581.40,
+                netAmount: 1674418.60,
+                paymentMode: "Bank Transfer",
+                durationMonths: 3,
+                durationText: "3 Months",
+                nextDueDate: "2026-11-01",
+                receivedBy: "Finance Ops"
+            },
+            {
+                id: 2,
+                date: "2026-08-01",
+                invNo: "INV-VN-2026-102",
+                customerName: "Dr. Alabi Raymond",
+                customerType: "FTTH",
+                category: "Monthly Bandwidth Subscription",
+                description: "50Mbps Unlimited Home Fiber Package",
+                grossAmount: 35000,
+                isVatExempt: false,
+                vatRate: 7.5,
+                vatAmount: 2441.86,
+                netAmount: 32558.14,
+                paymentMode: "Bank Transfer",
+                durationMonths: 1,
+                durationText: "1 Month",
+                nextDueDate: "2026-09-01",
+                receivedBy: "Billing Admin"
+            },
+            {
+                id: 3,
+                date: "2026-08-02",
+                invNo: "INV-VN-2026-103",
+                customerName: "Federal Health Research Agency",
+                customerType: "Enterprise",
+                category: "Monthly Bandwidth Subscription",
+                description: "1Gbps Lease Line Internet - Statutory Exemption",
+                grossAmount: 2500000,
+                isVatExempt: true,
+                vatRate: 0,
+                vatAmount: 0,
+                netAmount: 2500000,
+                paymentMode: "Bank Transfer",
+                durationMonths: 1,
+                durationText: "1 Month",
+                nextDueDate: "2026-09-02",
+                receivedBy: "Accountant"
+            },
+            {
+                id: 4,
+                date: "2026-08-02",
+                invNo: "INV-VN-2026-104",
+                customerName: "Victoria Crest Estate Unit 4B",
+                customerType: "FTTH",
+                category: "Installation & Setup Fee",
+                description: "FTTH Drop Cable & Dual Band Wi-Fi 6 ONU Router",
+                grossAmount: 85000,
+                isVatExempt: false,
+                vatRate: 7.5,
+                vatAmount: 5930.23,
+                netAmount: 79069.77,
+                paymentMode: "Card Payment",
+                durationMonths: 0,
+                durationText: "One-off / Non-recurring",
+                nextDueDate: "-",
+                receivedBy: "Front Office"
+            },
+            {
+                id: 5,
+                date: "2026-08-03",
+                invNo: "INV-VN-2026-105",
+                customerName: "Apex Logistics Hub",
+                customerType: "Enterprise",
+                category: "Equipment & Router Sales",
+                description: "MikroTik Core Router & Cisco PoE Switches Supply",
+                grossAmount: 950000,
+                isVatExempt: false,
+                vatRate: 7.5,
+                vatAmount: 66279.07,
+                netAmount: 883720.93,
+                paymentMode: "Bank Transfer",
+                durationMonths: 0,
+                durationText: "One-off / Non-recurring",
+                nextDueDate: "-",
+                receivedBy: "Sales Manager"
+            },
+            {
+                id: 6,
+                date: "2026-08-04",
+                invNo: "INV-VN-2026-106",
+                customerName: "Chief Kensington Residence",
+                customerType: "FTTH",
+                category: "Monthly Bandwidth Subscription",
+                description: "100Mbps Premium Residential Fiber Plan (6 Months)",
+                grossAmount: 360000,
+                isVatExempt: false,
+                vatRate: 7.5,
+                vatAmount: 25116.28,
+                netAmount: 334883.72,
+                paymentMode: "Bank Transfer",
+                durationMonths: 6,
+                durationText: "6 Months",
+                nextDueDate: "2027-02-04",
+                receivedBy: "Billing Admin"
+            },
+            {
+                id: 7,
+                date: "2026-08-05",
+                invNo: "INV-VN-2026-107",
+                customerName: "Interswitch Data Center Sub",
+                customerType: "Enterprise",
+                category: "Dark Fiber Lease",
+                description: "Dark Fiber Core Ring Link (Ikeja to Victoria Island)",
+                grossAmount: 4200000,
+                isVatExempt: false,
+                vatRate: 7.5,
+                vatAmount: 293023.26,
+                netAmount: 3906976.74,
+                paymentMode: "Bank Transfer",
+                durationMonths: 12,
+                durationText: "12 Months (1 Year)",
+                nextDueDate: "2027-08-05",
+                receivedBy: "MD / CTO"
+            }
+        ];
+
+        function App() {
+            // Local storage loading
+            const [incomeRecords, setIncomeRecords] = useState(() => {
+                const saved = localStorage.getItem('voix_income_daybook');
+                if (!saved) return INITIAL_INCOME_RECORDS;
+                try {
+                    return JSON.parse(saved);
+                } catch (e) {
+                    return INITIAL_INCOME_RECORDS;
+                }
+            });
+
+            const [activeTab, setActiveTab] = useState('excel-grid');
+            const [currencySymbol, setCurrencySymbol] = useState('₦');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [customerTypeFilter, setCustomerTypeFilter] = useState('ALL');
+            const [vatFilter, setVatFilter] = useState('ALL');
+            const [startDate, setStartDate] = useState('');
+            const [endDate, setEndDate] = useState('');
+
+            // Save to Local Storage
+            useEffect(() => {
+                localStorage.setItem('voix_income_daybook', JSON.stringify(incomeRecords));
+            }, [incomeRecords]);
+
+            // Available Months
+            const availableMonths = useMemo(() => {
+                const months = new Set(incomeRecords.map(r => r.date ? r.date.substring(0, 7) : ''));
+                const filtered = Array.from(months).filter(Boolean).sort().reverse();
+                return filtered.length > 0 ? filtered : [new Date().toISOString().substring(0, 7)];
+            }, [incomeRecords]);
+
+            const [selectedMonth, setSelectedMonth] = useState(() => availableMonths[0] || '2026-08');
+
+            useEffect(() => {
+                if (!availableMonths.includes(selectedMonth) && availableMonths.length > 0) {
+                    setSelectedMonth(availableMonths[0]);
+                }
+            }, [availableMonths]);
+
+            // Form Modal State
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [formData, setFormData] = useState({
+                date: new Date().toISOString().split('T')[0],
+                invNo: `INV-VN-2026-${String(incomeRecords.length + 101).padStart(3, '0')}`,
+                customerName: '',
+                customerType: 'FTTH',
+                category: 'Monthly Bandwidth Subscription',
+                description: '',
+                grossAmount: '',
+                isVatExempt: false,
+                vatCalculationType: 'INCLUSIVE', // INCLUSIVE (VAT inside total) vs EXCLUSIVE (VAT added to gross)
+                paymentMode: 'Bank Transfer',
+                durationMonths: 1,
+                customMonths: '',
+                nextDueDate: '',
+                receivedBy: ''
+            });
+
+            // Auto-calculate Next Due Date based on Payment Date & Duration
+            const calculatedDueDate = useMemo(() => {
+                if (!formData.date || formData.durationMonths === 0) return '-';
+                
+                const monthsToAdd = formData.durationMonths === -1 
+                    ? (parseInt(formData.customMonths) || 1) 
+                    : formData.durationMonths;
+
+                if (monthsToAdd <= 0) return '-';
+
+                const pDate = new Date(formData.date);
+                if (isNaN(pDate.getTime())) return '-';
+
+                pDate.setMonth(pDate.getMonth() + monthsToAdd);
+                return pDate.toISOString().split('T')[0];
+            }, [formData.date, formData.durationMonths, formData.customMonths]);
+
+            // Auto VAT & Net Income Preview in Form
+            const calculatedTaxBreakdown = useMemo(() => {
+                const gross = parseFloat(formData.grossAmount) || 0;
+                if (gross <= 0) return { gross: 0, vat: 0, net: 0 };
+
+                if (formData.isVatExempt) {
+                    return { gross, vat: 0, net: gross };
+                }
+
+                if (formData.vatCalculationType === 'INCLUSIVE') {
+                    // Gross = Net * 1.075 => Net = Gross / 1.075, VAT = Gross - Net
+                    const net = gross / 1.075;
+                    const vat = gross - net;
+                    return { gross, vat, net };
+                } else {
+                    // Exclusive: Base = Gross, Total Paid = Gross * 1.075
+                    const vat = gross * 0.075;
+                    const totalGross = gross + vat;
+                    return { gross: totalGross, vat, net: gross };
+                }
+            }, [formData.grossAmount, formData.isVatExempt, formData.vatCalculationType]);
+
+            const handleAddIncome = (e) => {
+                e.preventDefault();
+                const rawAmount = parseFloat(formData.grossAmount);
+                if (!rawAmount || isNaN(rawAmount) || rawAmount <= 0) {
+                    alert("Please enter a valid income amount.");
+                    return;
+                }
+
+                const monthsNum = formData.durationMonths === -1 
+                    ? (parseInt(formData.customMonths) || 1) 
+                    : formData.durationMonths;
+
+                let durationText = `${monthsNum} Month${monthsNum > 1 ? 's' : ''}`;
+                if (formData.durationMonths === 0) durationText = "One-off / Non-recurring";
+
+                const newRecord = {
+                    id: Date.now(),
+                    date: formData.date,
+                    invNo: formData.invNo,
+                    customerName: formData.customerName,
+                    customerType: formData.customerType,
+                    category: formData.category,
+                    description: formData.description,
+                    grossAmount: calculatedTaxBreakdown.gross,
+                    isVatExempt: formData.isVatExempt,
+                    vatRate: formData.isVatExempt ? 0 : 7.5,
+                    vatAmount: calculatedTaxBreakdown.vat,
+                    netAmount: calculatedTaxBreakdown.net,
+                    paymentMode: formData.paymentMode,
+                    durationMonths: monthsNum,
+                    durationText: durationText,
+                    nextDueDate: monthsNum > 0 ? (formData.nextDueDate || calculatedDueDate) : '-',
+                    receivedBy: formData.receivedBy || 'Finance Desk'
+                };
+
+                setIncomeRecords([newRecord, ...incomeRecords]);
+                setIsModalOpen(false);
+
+                // Reset form
+                setFormData({
+                    date: new Date().toISOString().split('T')[0],
+                    invNo: `INV-VN-2026-${String(incomeRecords.length + 102).padStart(3, '0')}`,
+                    customerName: '',
+                    customerType: 'FTTH',
+                    category: 'Monthly Bandwidth Subscription',
+                    description: '',
+                    grossAmount: '',
+                    isVatExempt: false,
+                    vatCalculationType: 'INCLUSIVE',
+                    paymentMode: 'Bank Transfer',
+                    durationMonths: 1,
+                    customMonths: '',
+                    nextDueDate: '',
+                    receivedBy: ''
+                });
+            };
+
+            const handleDeleteRecord = (id) => {
+                if (window.confirm("Are you sure you want to remove this income record?")) {
+                    setIncomeRecords(incomeRecords.filter(r => r.id !== id));
+                }
+            };
+
+            // Filtered records
+            const filteredRecords = useMemo(() => {
+                return incomeRecords.filter(r => {
+                    const matchesSearch = 
+                        r.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        r.invNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        r.description.toLowerCase().includes(searchQuery.toLowerCase());
+
+                    const matchesType = customerTypeFilter === 'ALL' || r.customerType === customerTypeFilter;
+                    
+                    const matchesVat = vatFilter === 'ALL' || 
+                        (vatFilter === 'EXEMPT' && r.isVatExempt) || 
+                        (vatFilter === 'APPLICABLE' && !r.isVatExempt);
+
+                    const matchesStart = !startDate || r.date >= startDate;
+                    const matchesEnd = !endDate || r.date <= endDate;
+
+                    return matchesSearch && matchesType && matchesVat && matchesStart && matchesEnd;
+                });
+            }, [incomeRecords, searchQuery, customerTypeFilter, vatFilter, startDate, endDate]);
+
+            // Totals
+            const totals = useMemo(() => {
+                return filteredRecords.reduce((acc, r) => {
+                    acc.gross += r.grossAmount || 0;
+                    acc.vat += r.vatAmount || 0;
+                    acc.net += r.netAmount || 0;
+                    if (r.customerType === 'FTTH') acc.ftthCount++;
+                    if (r.customerType === 'Enterprise') acc.enterpriseCount++;
+                    return acc;
+                }, { gross: 0, vat: 0, net: 0, ftthCount: 0, enterpriseCount: 0 });
+            }, [filteredRecords]);
+
+            // Monthly Summary calculations
+            const monthlyRecords = useMemo(() => {
+                return incomeRecords.filter(r => r.date && r.date.startsWith(selectedMonth));
+            }, [incomeRecords, selectedMonth]);
+
+            const monthlySummaryData = useMemo(() => {
+                const totalGross = monthlyRecords.reduce((s, r) => s + (r.grossAmount || 0), 0);
+                const totalVat = monthlyRecords.reduce((s, r) => s + (r.vatAmount || 0), 0);
+                const totalNet = monthlyRecords.reduce((s, r) => s + (r.netAmount || 0), 0);
+                
+                const ftthGross = monthlyRecords.filter(r => r.customerType === 'FTTH').reduce((s, r) => s + (r.grossAmount || 0), 0);
+                const enterpriseGross = monthlyRecords.filter(r => r.customerType === 'Enterprise').reduce((s, r) => s + (r.grossAmount || 0), 0);
+
+                const categoryBreakdown = INCOME_CATEGORIES.map((cat, idx) => {
+                    const catRecs = monthlyRecords.filter(r => r.category === cat);
+                    const gross = catRecs.reduce((s, r) => s + (r.grossAmount || 0), 0);
+                    const vat = catRecs.reduce((s, r) => s + (r.vatAmount || 0), 0);
+                    const net = catRecs.reduce((s, r) => s + (r.netAmount || 0), 0);
+                    const percentage = totalGross > 0 ? ((gross / totalGross) * 100).toFixed(1) : "0.0";
+
+                    return {
+                        id: idx + 1,
+                        category: cat,
+                        count: catRecs.length,
+                        gross,
+                        vat,
+                        net,
+                        percentage: parseFloat(percentage)
+                    };
+                });
+
+                return { totalGross, totalVat, totalNet, ftthGross, enterpriseGross, categoryBreakdown };
+            }, [monthlyRecords]);
+
+            // Subscription Renewal Due Status
+            const dueRegisterRecords = useMemo(() => {
+                const todayStr = new Date().toISOString().split('T')[0];
+                return incomeRecords
+                    .filter(r => r.nextDueDate && r.nextDueDate !== '-')
+                    .map(r => {
+                        const due = new Date(r.nextDueDate);
+                        const today = new Date(todayStr);
+                        const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+
+                        let status = "ACTIVE";
+                        let badgeClass = "bg-emerald-100 text-emerald-800 border-emerald-300";
+                        if (diffDays < 0) {
+                            status = "OVERDUE";
+                            badgeClass = "bg-red-100 text-red-800 border-red-300 font-bold";
+                        } else if (diffDays <= 7) {
+                            status = "DUE SOON";
+                            badgeClass = "bg-amber-100 text-amber-800 border-amber-300 font-bold";
+                        }
+
+                        return { ...r, diffDays, status, badgeClass };
+                    })
+                    .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
+            }, [incomeRecords]);
+
+            const exportToExcel = () => {
+                const detailedRows = filteredRecords.map((r, idx) => ({
+                    "S/N": idx + 1,
+                    "Payment Date": r.date,
+                    "Invoice / Receipt #": r.invNo,
+                    "Customer Name": r.customerName,
+                    "Customer Type": r.customerType,
+                    "Income Head Category": r.category,
+                    "Description": r.description,
+                    "Gross Receipts (₦)": r.grossAmount,
+                    "VAT Status": r.isVatExempt ? "VAT Exempted" : "7.5% Taxed",
+                    "7.5% Output VAT (₦)": r.vatAmount,
+                    "Net Revenue Earned (₦)": r.netAmount,
+                    "Payment Mode": r.paymentMode,
+                    "Duration": r.durationText,
+                    "Next Due Date": r.nextDueDate,
+                    "Received By": r.receivedBy
+                }));
+
+                const totalRow = {
+                    "S/N": "TOTAL",
+                    "Payment Date": "",
+                    "Invoice / Receipt #": "",
+                    "Customer Name": "TOTAL REVENUE",
+                    "Customer Type": "",
+                    "Income Head Category": "",
+                    "Description": `${filteredRecords.length} Transactions Listed`,
+                    "Gross Receipts (₦)": totals.gross,
+                    "VAT Status": "",
+                    "7.5% Output VAT (₦)": totals.vat,
+                    "Net Revenue Earned (₦)": totals.net,
+                    "Payment Mode": "",
+                    "Duration": "",
+                    "Next Due Date": "",
+                    "Received By": ""
+                };
+                detailedRows.push(totalRow);
+
+                const wb = XLSX.utils.book_new();
+                const wsDetails = XLSX.utils.json_to_sheet(detailedRows);
+                XLSX.utils.book_append_sheet(wb, wsDetails, "Income Ledger & VAT");
+
+                // Renewal Sheet
+                const renewalRows = dueRegisterRecords.map((r, idx) => ({
+                    "S/N": idx + 1,
+                    "Customer Name": r.customerName,
+                    "Customer Type": r.customerType,
+                    "Last Subscription Date": r.date,
+                    "Plan / Duration": r.durationText,
+                    "Next Renewal Due Date": r.nextDueDate,
+                    "Status": r.status,
+                    "Days Remaining": r.diffDays,
+                    "Last Payment (Gross ₦)": r.grossAmount
+                }));
+                const wsRenewals = XLSX.utils.json_to_sheet(renewalRows);
+                XLSX.utils.book_append_sheet(wb, wsRenewals, "Subscription Due Schedule");
+
+                XLSX.writeFile(wb, `VOIX_NETWORKS_Income_DayBook_${new Date().toISOString().split('T')[0]}.xlsx`);
+            };
+
+            const exportMonthlySummaryExcel = () => {
+                const summaryRows = monthlySummaryData.categoryBreakdown.map(item => ({
+                    "Head #": item.id,
+                    "Income Stream Category": item.category,
+                    "Transactions Count": item.count,
+                    "Gross Receipts (₦)": item.gross,
+                    "7.5% Output VAT (₦)": item.vat,
+                    "Net Income (₦)": item.net,
+                    "% Revenue Share": `${item.percentage}%`
+                }));
+
+                summaryRows.push({
+                    "Head #": "TOTAL",
+                    "Income Stream Category": "TOTAL MONTHLY REVENUE",
+                    "Transactions Count": monthlyRecords.length,
+                    "Gross Receipts (₦)": monthlySummaryData.totalGross,
+                    "7.5% Output VAT (₦)": monthlySummaryData.totalVat,
+                    "Net Income (₦)": monthlySummaryData.totalNet,
+                    "% Revenue Share": "100.0%"
+                });
+
+                const wb = XLSX.utils.book_new();
+                const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+                XLSX.utils.book_append_sheet(wb, wsSummary, `Revenue ${selectedMonth}`);
+
+                XLSX.writeFile(wb, `VOIX_NETWORKS_Monthly_Revenue_Summary_${selectedMonth}.xlsx`);
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* Top Navigation Header */}
+                    <header className="bg-slate-900 text-white shadow-md no-print">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div className="flex items-center space-x-3">
+                                <div className="bg-emerald-600 p-2.5 rounded-lg shadow-lg">
+                                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                                        VOIX NETWORKS <span className="text-xs bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded-full font-semibold">Income & Revenue Day Book</span>
+                                    </h1>
+                                    <p className="text-xs text-slate-400">ISP Revenue Ledger • 7.5% Auto-VAT • Customer Due Date Schedule (FTTH / Enterprise)</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                    onClick={() => setIsModalOpen(true)}
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-1.5 shadow-sm transition"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                                    + Post Income Entry
+                                </button>
+
+                                <button
+                                    onClick={exportToExcel}
+                                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-1.5 shadow-sm transition"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                    Export Income (.xlsx)
+                                </button>
+
+                                <button
+                                    onClick={() => window.print()}
+                                    className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-lg font-medium text-sm transition"
+                                >
+                                    Print Day Book
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Tabs */}
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-800 flex space-x-6 text-sm overflow-x-auto">
+                            <button
+                                onClick={() => setActiveTab('excel-grid')}
+                                className={`py-3 font-medium border-b-2 whitespace-nowrap transition ${activeTab === 'excel-grid' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                            >
+                                📊 Income Day Book Ledger (Excel View)
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('due-register')}
+                                className={`py-3 font-medium border-b-2 whitespace-nowrap transition ${activeTab === 'due-register' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                            >
+                                ⏰ Renewal & Due Date Schedule
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('monthly')}
+                                className={`py-3 font-medium border-b-2 whitespace-nowrap transition ${activeTab === 'monthly' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                            >
+                                📅 Monthly Revenue & VAT Summary
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('categories')}
+                                className={`py-3 font-medium border-b-2 whitespace-nowrap transition ${activeTab === 'categories' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                            >
+                                🏷️ Revenue Stream Categories
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Main Container */}
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
+                        
+                        {/* Executive Summary Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 no-print">
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Gross Revenue Received</p>
+                                <p className="text-2xl font-bold text-slate-900 mt-1">{currencySymbol}{totals.gross.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                <p className="text-xs text-slate-400 mt-1">{filteredRecords.length} Payment Receipts Listed</p>
+                            </div>
+
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">7.5% Output VAT Deducted</p>
+                                <p className="text-2xl font-bold text-amber-600 mt-1">
+                                    {currencySymbol}{totals.vat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                </p>
+                                <p className="text-xs text-slate-400 mt-1">Payable to FIRS Tax Authority</p>
+                            </div>
+
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Net Earned Revenue</p>
+                                <p className="text-2xl font-bold text-emerald-600 mt-1">
+                                    {currencySymbol}{totals.net.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                </p>
+                                <p className="text-xs text-slate-400 mt-1">Exclusive of 7.5% VAT</p>
+                            </div>
+
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Customer Breakdown</p>
+                                <div className="flex justify-between items-center mt-2">
+                                    <div>
+                                        <span className="text-xs bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded">FTTH</span>
+                                        <p className="text-base font-bold text-slate-800 mt-0.5">{totals.ftthCount} Clients</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="text-xs bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded">Enterprise</span>
+                                        <p className="text-base font-bold text-slate-800 mt-0.5">{totals.enterpriseCount} Clients</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Search & Filters */}
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-wrap gap-4 items-center justify-between no-print">
+                            <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+                                <div className="relative flex-1 min-w-[200px]">
+                                    <input
+                                        type="text"
+                                        placeholder="Search customer name, invoice #, or plan details..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                                    />
+                                    <svg className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                </div>
+
+                                {/* Customer Type Filter */}
+                                <select
+                                    value={customerTypeFilter}
+                                    onChange={(e) => setCustomerTypeFilter(e.target.value)}
+                                    className="px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                                >
+                                    <option value="ALL">All Customer Types</option>
+                                    <option value="FTTH">FTTH (Home Subscribers)</option>
+                                    <option value="Enterprise">Enterprise (Corporate / Business)</option>
+                                </select>
+
+                                {/* VAT Status Filter */}
+                                <select
+                                    value={vatFilter}
+                                    onChange={(e) => setVatFilter(e.target.value)}
+                                    className="px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                                >
+                                    <option value="ALL">All Tax Statuses</option>
+                                    <option value="APPLICABLE">Standard 7.5% VAT</option>
+                                    <option value="EXEMPT">VAT Exempted</option>
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-slate-500">From:</span>
+                                <input
+                                    type="date"
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    className="px-2 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                                />
+                                <span className="text-xs font-semibold text-slate-500">To:</span>
+                                <input
+                                    type="date"
+                                    value={endDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                    className="px-2 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                                />
+                                {(startDate || endDate || searchQuery || customerTypeFilter !== 'ALL' || vatFilter !== 'ALL') && (
+                                    <button
+                                        onClick={() => { setStartDate(''); setEndDate(''); setSearchQuery(''); setCustomerTypeFilter('ALL'); setVatFilter('ALL'); }}
+                                        className="text-xs text-red-600 hover:text-red-800 font-semibold px-2 py-1"
+                                    >
+                                        Reset
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* TAB 1: Columnar Day Book Ledger (Excel Grid) */}
+                        {activeTab === 'excel-grid' && (
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                    <div>
+                                        <h2 className="font-bold text-slate-800">VOIX NETWORKS - Income & Revenue Day Book Spreadsheet</h2>
+                                        <p className="text-xs text-slate-500">Includes 7.5% VAT calculation breakdown, Customer Classification, and Subscription Expiration Tracking</p>
+                                    </div>
+                                    <span className="text-xs font-bold px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
+                                        Live VAT Audit Ledger
+                                    </span>
+                                </div>
+
+                                <div className="overflow-x-auto custom-scrollbar">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-900 text-white font-semibold text-[11px]">
+                                                <th className="p-2.5 border-r border-slate-800">Date</th>
+                                                <th className="p-2.5 border-r border-slate-800">Invoice #</th>
+                                                <th className="p-2.5 border-r border-slate-800 min-w-[160px]">Customer Name</th>
+                                                <th className="p-2.5 border-r border-slate-800 text-center">Type</th>
+                                                <th className="p-2.5 border-r border-slate-800 min-w-[150px]">Income Category</th>
+                                                <th className="p-2.5 border-r border-slate-800 min-w-[180px]">Particulars</th>
+                                                <th className="p-2.5 border-r border-slate-800 text-right bg-slate-800 font-bold">Gross Total (₦)</th>
+                                                <th className="p-2.5 border-r border-slate-800 text-center">VAT Status</th>
+                                                <th className="p-2.5 border-r border-slate-800 text-right bg-amber-950/60 font-bold">7.5% VAT (₦)</th>
+                                                <th className="p-2.5 border-r border-slate-800 text-right bg-emerald-950/60 font-bold">Net Revenue (₦)</th>
+                                                <th className="p-2.5 border-r border-slate-800 text-center">Duration</th>
+                                                <th className="p-2.5 border-r border-slate-800 text-center">Next Due Date</th>
+                                                <th className="p-2.5 border-r border-slate-800">Payment Mode</th>
+                                                <th className="p-2.5 text-center no-print">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-200 font-mono text-[11px]">
+                                            {filteredRecords.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="14" className="p-8 text-center text-slate-400 font-sans text-sm">
+                                                        No income transactions found matching criteria.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                filteredRecords.map((r) => (
+                                                    <tr key={r.id} className="hover:bg-emerald-50/40 transition">
+                                                        <td className="p-2.5 border-r border-slate-200 text-slate-600 whitespace-nowrap">{r.date}</td>
+                                                        <td className="p-2.5 border-r border-slate-200 font-bold text-emerald-700 whitespace-nowrap">{r.invNo}</td>
+                                                        <td className="p-2.5 border-r border-slate-200 font-sans font-bold text-slate-900">{r.customerName}</td>
+                                                        <td className="p-2.5 border-r border-slate-200 text-center font-sans">
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${r.customerType === 'FTTH' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+                                                                {r.customerType}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-2.5 border-r border-slate-200 font-sans text-slate-700 text-[11px]">{r.category}</td>
+                                                        <td className="p-2.5 border-r border-slate-200 font-sans text-slate-500 text-[11px] truncate max-w-[200px]" title={r.description}>
+                                                            {r.description}
+                                                        </td>
+                                                        <td className="p-2.5 border-r border-slate-200 text-right font-black bg-slate-50 text-slate-900">
+                                                            {currencySymbol}{r.grossAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                        </td>
+                                                        <td className="p-2.5 border-r border-slate-200 text-center font-sans">
+                                                            {r.isVatExempt ? (
+                                                                <span className="bg-slate-100 text-slate-600 border border-slate-200 text-[9px] px-1.5 py-0.5 rounded font-bold">EXEMPT</span>
+                                                            ) : (
+                                                                <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[9px] px-1.5 py-0.5 rounded font-bold">7.5% VAT</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-2.5 border-r border-slate-200 text-right font-bold text-amber-700 bg-amber-50/50">
+                                                            {r.vatAmount > 0 ? `${currencySymbol}${r.vatAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '-'}
+                                                        </td>
+                                                        <td className="p-2.5 border-r border-slate-200 text-right font-black text-emerald-900 bg-emerald-50/60">
+                                                            {currencySymbol}{r.netAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                        </td>
+                                                        <td className="p-2.5 border-r border-slate-200 text-center font-sans text-[11px] text-slate-600 whitespace-nowrap">{r.durationText}</td>
+                                                        <td className="p-2.5 border-r border-slate-200 text-center font-mono font-bold text-slate-800 whitespace-nowrap bg-slate-50">
+                                                            {r.nextDueDate}
+                                                        </td>
+                                                        <td className="p-2.5 border-r border-slate-200 font-sans text-slate-600 text-[11px] whitespace-nowrap">{r.paymentMode}</td>
+                                                        <td className="p-2.5 text-center no-print font-sans">
+                                                            <button
+                                                                onClick={() => handleDeleteRecord(r.id)}
+                                                                className="text-red-500 hover:text-red-700 font-bold text-xs"
+                                                                title="Delete Entry"
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                        {/* Auto-sum Footer */}
+                                        <tfoot>
+                                            <tr className="bg-slate-900 text-white font-bold text-right font-mono text-xs">
+                                                <td colSpan="6" className="p-3 border-r border-slate-700 text-left font-sans uppercase tracking-wider">
+                                                    TOTAL REVENUE & VAT LEDGER
+                                                </td>
+                                                <td className="p-3 border-r border-slate-700 text-white bg-slate-950 font-black">
+                                                    {currencySymbol}{totals.gross.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                </td>
+                                                <td className="p-3 border-r border-slate-700"></td>
+                                                <td className="p-3 border-r border-slate-700 text-amber-400 bg-amber-950 font-black">
+                                                    {currencySymbol}{totals.vat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                </td>
+                                                <td className="p-3 border-r border-slate-700 text-emerald-400 bg-emerald-950 font-black">
+                                                    {currencySymbol}{totals.net.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                                </td>
+                                                <td colSpan="4" className="p-3 font-sans text-slate-400 text-left text-[11px]">
+                                                    {filteredRecords.length} Total Receipts
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TAB 2: Subscription Renewal & Due Date Schedule */}
+                        {activeTab === 'due-register' && (
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="p-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center flex-wrap gap-4">
+                                    <div>
+                                        <h2 className="font-bold text-slate-800 text-base">Subscription Due Date & Renewal Tracking Schedule</h2>
+                                        <p className="text-xs text-slate-500">Monitors customer contract expirations for both FTTH residential and Enterprise internet links</p>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 text-xs">
+                                        <span className="flex items-center gap-1 bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-bold">
+                                            ● Active
+                                        </span>
+                                        <span className="flex items-center gap-1 bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full font-bold">
+                                            ● Due in 7 Days
+                                        </span>
+                                        <span className="flex items-center gap-1 bg-red-100 text-red-800 px-2.5 py-1 rounded-full font-bold">
+                                            ● Overdue
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 text-xs">
+                                                <th className="p-3">Customer Name</th>
+                                                <th className="p-3">Customer Type</th>
+                                                <th className="p-3">Subscription Plan</th>
+                                                <th className="p-3">Last Payment Date</th>
+                                                <th className="p-3">Duration Cycle</th>
+                                                <th className="p-3 font-bold text-slate-900">Next Renewal Due Date</th>
+                                                <th className="p-3 text-center">Status</th>
+                                                <th className="p-3 text-right">Last Payment (Gross)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-200">
+                                            {dueRegisterRecords.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="8" className="p-8 text-center text-slate-400 text-sm">
+                                                        No recurring subscriptions found.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                dueRegisterRecords.map(r => (
+                                                    <tr key={r.id} className="hover:bg-slate-50">
+                                                        <td className="p-3 font-bold text-slate-900">{r.customerName}</td>
+                                                        <td className="p-3">
+                                                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${r.customerType === 'FTTH' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+                                                                {r.customerType}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-3 text-xs text-slate-600">{r.description}</td>
+                                                        <td className="p-3 text-xs font-mono text-slate-500">{r.date}</td>
+                                                        <td className="p-3 text-xs font-medium text-slate-700">{r.durationText}</td>
+                                                        <td className="p-3 font-mono font-bold text-base text-slate-900 bg-slate-50">{r.nextDueDate}</td>
+                                                        <td className="p-3 text-center">
+                                                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${r.badgeClass}`}>
+                                                                {r.status} {r.diffDays >= 0 ? `(${r.diffDays}d left)` : `(${Math.abs(r.diffDays)}d overdue)`}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-3 text-right font-mono font-bold text-slate-900">
+                                                            {currencySymbol}{r.grossAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TAB 3: Monthly Revenue & VAT Summary */}
+                        {activeTab === 'monthly' && (
+                            <div className="space-y-6">
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-emerald-100 text-emerald-700 p-2.5 rounded-lg">
+                                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Select Reporting Month</label>
+                                            <select
+                                                value={selectedMonth}
+                                                onChange={(e) => setSelectedMonth(e.target.value)}
+                                                className="px-3 py-1.5 text-base font-bold text-slate-900 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                                            >
+                                                {availableMonths.map(m => {
+                                                    const [y, mo] = m.split('-');
+                                                    const monthName = new Date(parseInt(y), parseInt(mo) - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                                                    return (
+                                                        <option key={m} value={m}>{monthName} ({m})</option>
+                                                    );
+                                                })}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={exportMonthlySummaryExcel}
+                                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg font-semibold text-sm flex items-center gap-2 shadow-sm transition"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                            Download Revenue Report (.xlsx)
+                                        </button>
+
+                                        <button
+                                            onClick={() => window.print()}
+                                            className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-lg font-semibold text-sm flex items-center gap-2 shadow-sm transition"
+                                        >
+                                            🖨️ Print Financial Statement
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Executive Financial Statement */}
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                    <div className="border-b border-slate-200 pb-5 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                        <div>
+                                            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full uppercase tracking-wide">
+                                                FIRS Output VAT & Revenue Statement
+                                            </span>
+                                            <h2 className="text-2xl font-extrabold text-slate-900 mt-2">
+                                                VOIX NETWORKS - Monthly Income & Tax Report
+                                            </h2>
+                                            <p className="text-sm text-slate-500 mt-1">
+                                                Reporting Month: <span className="font-semibold text-slate-800">
+                                                    {new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]) - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                                </span>
+                                            </p>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3 text-right">
+                                            <div className="bg-slate-900 text-white p-3 rounded-xl min-w-[150px]">
+                                                <p className="text-[10px] uppercase text-slate-400 font-semibold tracking-wider">Gross Receipts</p>
+                                                <p className="text-lg font-mono font-bold text-emerald-400 mt-0.5">
+                                                    {currencySymbol}{monthlySummaryData.totalGross.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                                                </p>
+                                            </div>
+                                            <div className="bg-amber-900 text-white p-3 rounded-xl min-w-[150px]">
+                                                <p className="text-[10px] uppercase text-amber-200 font-semibold tracking-wider">7.5% VAT Deducted</p>
+                                                <p className="text-lg font-mono font-bold text-amber-300 mt-0.5">
+                                                    {currencySymbol}{monthlySummaryData.totalVat.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Monthly Category Breakdown Table */}
+                                    <div className="overflow-x-auto mb-6">
+                                        <table className="w-full text-left text-sm border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-700 font-bold border-y border-slate-200">
+                                                    <th className="p-3 w-12 text-center">Head #</th>
+                                                    <th className="p-3">Income Stream Category</th>
+                                                    <th className="p-3 text-center">Count</th>
+                                                    <th className="p-3 text-right">Gross Total ({currencySymbol})</th>
+                                                    <th className="p-3 text-right text-amber-700">7.5% VAT ({currencySymbol})</th>
+                                                    <th className="p-3 text-right font-black">Net Income ({currencySymbol})</th>
+                                                    <th className="p-3 text-right w-24">% Share</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-200 text-slate-800">
+                                                {monthlySummaryData.categoryBreakdown.map((item) => (
+                                                    <tr key={item.id} className="hover:bg-slate-50 transition">
+                                                        <td className="p-3 font-mono text-center font-bold text-slate-500">{item.id}</td>
+                                                        <td className="p-3 font-bold text-slate-900">{item.category}</td>
+                                                        <td className="p-3 text-center font-mono">{item.count}</td>
+                                                        <td className="p-3 font-mono text-right font-semibold">
+                                                            {item.gross > 0 ? `${currencySymbol}${item.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}
+                                                        </td>
+                                                        <td className="p-3 font-mono text-right font-bold text-amber-700">
+                                                            {item.vat > 0 ? `${currencySymbol}${item.vat.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}
+                                                        </td>
+                                                        <td className="p-3 font-mono font-bold text-right text-emerald-900">
+                                                            {item.net > 0 ? `${currencySymbol}${item.net.toLocaleString(undefined, {minimumFractionDigits: 2})}` : '-'}
+                                                        </td>
+                                                        <td className="p-3 font-mono text-right font-semibold text-slate-600">
+                                                            {item.percentage}%
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                            <tfoot>
+                                                <tr className="bg-slate-900 text-white font-bold text-sm">
+                                                    <td colSpan="2" className="p-3 uppercase tracking-wider text-xs">
+                                                        TOTAL MONTHLY INCOME
+                                                    </td>
+                                                    <td className="p-3 text-center font-mono">{monthlyRecords.length}</td>
+                                                    <td className="p-3 text-right font-mono text-white">
+                                                        {currencySymbol}{monthlySummaryData.totalGross.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                                                    </td>
+                                                    <td className="p-3 text-right font-mono text-amber-400">
+                                                        {currencySymbol}{monthlySummaryData.totalVat.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                                                    </td>
+                                                    <td className="p-3 text-right font-mono text-emerald-400 text-base">
+                                                        {currencySymbol}{monthlySummaryData.totalNet.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                                                    </td>
+                                                    <td className="p-3 text-right font-mono">100.0%</td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+
+                                    {/* Audit Footer */}
+                                    <div className="pt-6 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-500">
+                                        <div>
+                                            <p className="font-bold text-slate-700 uppercase mb-1">Tax & Audit Notes:</p>
+                                            <p>All VAT deductions follow the standard 7.5% Nigerian Value Added Tax rate unless covered by statutory tax exemptions. Generated for VOIX NETWORKS on {new Date().toLocaleDateString()}.</p>
+                                        </div>
+                                        <div className="flex justify-between items-end pt-4 border-t border-dashed border-slate-300 md:border-t-0 md:pt-0">
+                                            <div>
+                                                <p className="font-semibold text-slate-800">Billing Officer: __________________</p>
+                                                <p className="text-[11px] text-slate-400">Finance & Revenue Ops</p>
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-slate-800">Approved By: __________________</p>
+                                                <p className="text-[11px] text-slate-400">Managing Director / Auditor</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TAB 4: Revenue Stream Categories */}
+                        {activeTab === 'categories' && (
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                <div className="border-b border-slate-200 pb-4 mb-6">
+                                    <h2 className="text-lg font-bold text-slate-900">VOIX NETWORKS - Official Income Classifications</h2>
+                                    <p className="text-xs text-slate-500">Standardized revenue stream categories for ISP billing and financial accounting</p>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {INCOME_CATEGORIES.map((cat, idx) => (
+                                        <div key={cat} className="p-4 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-white hover:border-emerald-300 transition shadow-2xs">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="bg-emerald-600 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
+                                                    {idx + 1}
+                                                </span>
+                                                <h3 className="font-bold text-slate-900 text-sm">{cat}</h3>
+                                            </div>
+                                            <p className="text-xs text-slate-500">Includes all client billing, invoices, and service subscriptions recorded under this classification head.</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Post Income Modal Form */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                            <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                                <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 text-base">Post Income Payment Receipt</h3>
+                                        <p className="text-xs text-slate-500">Automatic 7.5% VAT calculation & Subscription due date tracking</p>
+                                    </div>
+                                    <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+                                </div>
+
+                                <form onSubmit={handleAddIncome} className="space-y-4 mt-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Date</label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={formData.date}
+                                                onChange={(e) => setFormData({...formData, date: e.target.value})}
+                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Invoice / Receipt #</label>
+                                            <input
+                                                type="text"
+                                                required
+                                                value={formData.invNo}
+                                                onChange={(e) => setFormData({...formData, invNo: e.target.value})}
+                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-4">
+                                        <div className="col-span-2">
+                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Customer / Client Name</label>
+                                            <input
+                                                type="text"
+                                                required
+                                                placeholder="e.g. Zenith Tech Park / Dr. Alabi"
+                                                value={formData.customerName}
+                                                onChange={(e) => setFormData({...formData, customerName: e.target.value})}
+                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 font-medium"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Customer Type</label>
+                                            <select
+                                                value={formData.customerType}
+                                                onChange={(e) => setFormData({...formData, customerType: e.target.value})}
+                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white font-bold"
+                                            >
+                                                <option value="FTTH">FTTH (Home)</option>
+                                                <option value="Enterprise">Enterprise</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Income Stream Category</label>
+                                            <select
+                                                value={formData.category}
+                                                onChange={(e) => setFormData({...formData, category: e.target.value})}
+                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                                            >
+                                                {INCOME_CATEGORIES.map(cat => (
+                                                    <option key={cat} value={cat}>{cat}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Mode</label>
+                                            <select
+                                                value={formData.paymentMode}
+                                                onChange={(e) => setFormData({...formData, paymentMode: e.target.value})}
+                                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                                            >
+                                                <option value="Bank Transfer">Bank Transfer</option>
+                                                <option value="Card Payment">Card Payment</option>
+                                                <option value="Direct Debit">Direct Debit</option>
+                                                <option value="Cheque">Cheque</option>
+                                                <option value="Cash">Cash</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Description / Particulars</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="e.g. 50Mbps Unlimited Monthly Home Plan"
+                                            value={formData.description}
+                                            onChange={(e) => setFormData({...formData, description: e.target.value})}
+                                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                        />
+                                    </div>
+
+                                    {/* VAT Calculation Box */}
+                                    <div className="bg-amber-50/70 border border-amber-200 p-3.5 rounded-xl space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                                                💰 Payment Amount & 7.5% VAT Engine
+                                            </label>
+
+                                            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.isVatExempt}
+                                                    onChange={(e) => setFormData({...formData, isVatExempt: e.target.checked})}
+                                                    className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
+                                                />
+                                                VAT Exempted Client
+                                            </label>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Amount Entered ({currencySymbol})</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    required
+                                                    placeholder="0.00"
+                                                    value={formData.grossAmount}
+                                                    onChange={(e) => setFormData({...formData, grossAmount: e.target.value})}
+                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Amount Type</label>
+                                                <select
+                                                    disabled={formData.isVatExempt}
+                                                    value={formData.vatCalculationType}
+                                                    onChange={(e) => setFormData({...formData, vatCalculationType: e.target.value})}
+                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white disabled:bg-slate-100 text-slate-800"
+                                                >
+                                                    <option value="INCLUSIVE">Inclusive of 7.5% VAT</option>
+                                                    <option value="EXCLUSIVE">Exclusive (+7.5% VAT added)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        {/* Computed VAT Preview */}
+                                        <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-amber-200/80 font-mono">
+                                            <div>
+                                                <span className="text-slate-500 text-[10px]">Gross Paid:</span>
+                                                <p className="font-bold text-slate-900">{currencySymbol}{calculatedTaxBreakdown.gross.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-amber-700 text-[10px]">7.5% VAT:</span>
+                                                <p className="font-bold text-amber-700">{currencySymbol}{calculatedTaxBreakdown.vat.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-emerald-700 text-[10px]">Net Income:</span>
+                                                <p className="font-bold text-emerald-800">{currencySymbol}{calculatedTaxBreakdown.net.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Duration and Next Due Date Box */}
+                                    <div className="bg-blue-50/60 border border-blue-200 p-3.5 rounded-xl space-y-3">
+                                        <p className="text-xs font-bold text-blue-900">🗓️ Payment Duration & Subscription Expiration</p>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Duration Cycle</label>
+                                                <select
+                                                    value={formData.durationMonths}
+                                                    onChange={(e) => setFormData({...formData, durationMonths: parseInt(e.target.value)})}
+                                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500"
+                                                >
+                                                    <option value={1}>1 Month (Monthly)</option>
+                                                    <option value={3}>3 Months (Quarterly)</option>
+                                                    <option value={6}>6 Months (Bi-Annual)</option>
+                                                    <option value={12}>12 Months (1 Year)</option>
+                                                    <option value={0}>One-off / Non-recurring</option>
+                                                    <option value={-1}>Custom Months</option>
+                                                </select>
+                                            </div>
+
+                                            {formData.durationMonths === -1 ? (
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Number of Months</label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        placeholder="e.g. 2, 5, 18"
+                                                        value={formData.customMonths}
+                                                        onChange={(e) => setFormData({...formData, customMonths: e.target.value})}
+                                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div>
+                                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Next Due Date (Auto)</label>
+                                                    <input
+                                                        type="date"
+                                                        value={formData.nextDueDate || calculatedDueDate}
+                                                        onChange={(e) => setFormData({...formData, nextDueDate: e.target.value})}
+                                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono font-bold bg-white"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Received / Processed By</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Staff or Admin Name"
+                                            value={formData.receivedBy}
+                                            onChange={(e) => setFormData({...formData, receivedBy: e.target.value})}
+                                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                        />
+                                    </div>
+
+                                    <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsModalOpen(false)}
+                                            className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="px-5 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg shadow-sm"
+                                        >
+                                            Post Income & Calculate VAT
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
