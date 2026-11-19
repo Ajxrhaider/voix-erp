@@ -43,6 +43,13 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     revoked_at DATETIME
   );
+  CREATE TABLE IF NOT EXISTS customer_groups (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT REFERENCES customer_groups(id) ON DELETE RESTRICT,
+    name TEXT NOT NULL,
+    group_type TEXT NOT NULL CHECK(group_type IN ('network', 'line', 'estate', 'house')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
   CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
     voix_no TEXT UNIQUE,
@@ -57,6 +64,7 @@ db.exec(`
     balance REAL DEFAULT 0.0,
     status TEXT DEFAULT 'Active',
     payment_schedule TEXT,
+    group_id TEXT REFERENCES customer_groups(id) ON DELETE SET NULL,
     amount_payable REAL DEFAULT 0.0,
     amount_paid REAL DEFAULT 0.0,
     bank_received TEXT,
@@ -128,6 +136,14 @@ db.exec(`
     reference_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS legacy_monthly_totals (
+    customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    period TEXT NOT NULL,
+    amount REAL NOT NULL,
+    source_name TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(customer_id, period)
+  );
   CREATE TABLE IF NOT EXISTS requisitions (
     id TEXT PRIMARY KEY,
     type TEXT CHECK(type IN ('Cash', 'Materials')) NOT NULL,
@@ -144,6 +160,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     external_ref TEXT,
     customer_id TEXT REFERENCES customers(id),
+    scope_group_id TEXT REFERENCES customer_groups(id) ON DELETE SET NULL,
     customer_name TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
@@ -166,6 +183,18 @@ db.exec(`
     closure_notes TEXT,
     ticket_closed_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS ticket_customer_links (
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(ticket_id, customer_id)
+  );
+  CREATE TABLE IF NOT EXISTS ticket_scope_groups (
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    group_id TEXT NOT NULL REFERENCES customer_groups(id) ON DELETE CASCADE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(ticket_id, group_id)
   );
   CREATE TABLE IF NOT EXISTS daily_teams (
     id TEXT PRIMARY KEY,
@@ -224,6 +253,65 @@ db.exec(`
     type TEXT DEFAULT 'System',
     is_read INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS import_archives (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_name TEXT NOT NULL,
+    sha256 TEXT NOT NULL UNIQUE,
+    mime_type TEXT,
+    file_data BLOB NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_imported_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS legacy_import_rows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    archive_id INTEGER NOT NULL REFERENCES import_archives(id) ON DELETE CASCADE,
+    sheet_name TEXT NOT NULL,
+    source_row_number INTEGER NOT NULL,
+    record_kind TEXT NOT NULL DEFAULT 'raw',
+    row_data_json TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(archive_id, sheet_name, source_row_number)
+  );
+  CREATE TABLE IF NOT EXISTS legacy_customer_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    archive_id INTEGER NOT NULL REFERENCES import_archives(id) ON DELETE CASCADE,
+    source_name TEXT NOT NULL,
+    source_sheet TEXT NOT NULL,
+    source_row_number INTEGER NOT NULL,
+    customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
+    voix_no TEXT,
+    date_paid TEXT,
+    date_paid_raw TEXT,
+    amount REAL,
+    amount_raw TEXT,
+    payment_method TEXT,
+    reference_no TEXT,
+    expiry_date TEXT,
+    expiry_date_raw TEXT,
+    raw_data_json TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(source_name, source_sheet, source_row_number)
+  );
+  CREATE TABLE IF NOT EXISTS legacy_customer_support_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    archive_id INTEGER NOT NULL REFERENCES import_archives(id) ON DELETE CASCADE,
+    source_name TEXT NOT NULL,
+    source_sheet TEXT NOT NULL,
+    source_row_number INTEGER NOT NULL,
+    customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
+    voix_no TEXT,
+    event_date TEXT,
+    event_date_raw TEXT,
+    event_time TEXT,
+    logged_by TEXT,
+    issue_category TEXT,
+    details TEXT,
+    action_taken TEXT,
+    status TEXT,
+    raw_data_json TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(source_name, source_sheet, source_row_number)
   );
   CREATE TABLE IF NOT EXISTS customer_care_reports (
     id TEXT PRIMARY KEY,
@@ -294,6 +382,9 @@ const migrateSpreadsheetColumns = () => {
   addColumn('customers', 'service_plan', 'TEXT');
   addColumn('customers', 'ip_address', "TEXT DEFAULT 'Unassigned'");
   addColumn('customers', 'balance', 'REAL DEFAULT 0.0');
+  addColumn('customers', 'group_id', 'TEXT REFERENCES customer_groups(id) ON DELETE SET NULL');
+
+  addColumn('tickets', 'scope_group_id', 'TEXT REFERENCES customer_groups(id) ON DELETE SET NULL');
 
   addColumn('accounting_ledger', 'approved_by', 'TEXT');
   addColumn('accounting_ledger', 'customer_id', 'TEXT REFERENCES customers(id)');
@@ -309,11 +400,27 @@ const migrateSpreadsheetColumns = () => {
       ON deployments(external_ref) WHERE external_ref IS NOT NULL AND external_ref <> '';
     CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_dedupe_key
       ON notifications(dedupe_key) WHERE dedupe_key IS NOT NULL AND dedupe_key <> '';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_groups_parent_name
+      ON customer_groups(ifnull(parent_id, ''), group_type, lower(trim(name)));
+    CREATE INDEX IF NOT EXISTS idx_customer_groups_parent ON customer_groups(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_customers_group_id ON customers(group_id);
+    CREATE INDEX IF NOT EXISTS idx_ticket_customer_links_customer ON ticket_customer_links(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_ticket_scope_groups_group ON ticket_scope_groups(group_id);
+    CREATE INDEX IF NOT EXISTS idx_tickets_scope_group_id ON tickets(scope_group_id);
+    CREATE INDEX IF NOT EXISTS idx_legacy_import_rows_archive ON legacy_import_rows(archive_id, sheet_name);
+    CREATE INDEX IF NOT EXISTS idx_legacy_customer_payments_customer ON legacy_customer_payments(customer_id, date_paid);
+    CREATE INDEX IF NOT EXISTS idx_legacy_customer_support_customer ON legacy_customer_support_history(customer_id, event_date);
+    CREATE INDEX IF NOT EXISTS idx_legacy_monthly_totals_period ON legacy_monthly_totals(period);
     CREATE INDEX IF NOT EXISTS idx_customers_next_due_date ON customers(next_due_date);
     CREATE INDEX IF NOT EXISTS idx_tickets_customer_id ON tickets(customer_id);
     CREATE INDEX IF NOT EXISTS idx_ledger_customer_id ON accounting_ledger(customer_id);
     CREATE INDEX IF NOT EXISTS idx_deployments_customer_id ON deployments(customer_id);
   `);
+
+  db.prepare(`
+    INSERT OR IGNORE INTO ticket_customer_links (ticket_id, customer_id)
+    SELECT id, customer_id FROM tickets WHERE customer_id IS NOT NULL
+  `).run();
 };
 
 migrateSpreadsheetColumns();
@@ -329,7 +436,7 @@ export function generateId(seqName, prefix) {
   return `${prefix}-${String(result.next_val).padStart(3, '0')}`;
 }
 
-const sequences = ['staff', 'customer', 'sale', 'deployment', 'ticket', 'work_order', 'team', 'inventory', 'requisition', 'report', 'cc_report', 'auth_session'];
+const sequences = ['staff', 'customer', 'customer_group', 'sale', 'deployment', 'ticket', 'work_order', 'team', 'inventory', 'requisition', 'report', 'cc_report', 'auth_session'];
 const insertSequence = db.prepare('INSERT OR IGNORE INTO id_sequences (seq_name, next_val) VALUES (?, 100)');
 const initializeSequences = db.transaction(() => sequences.forEach((sequence) => insertSequence.run(sequence)));
 initializeSequences();

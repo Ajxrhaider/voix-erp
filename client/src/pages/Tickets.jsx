@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import ModuleLayout from '../components/layout/ModuleLayout';
+import CustomerGroupScopeSelect from '../components/CRM/CustomerGroupScopeSelect';
 import { canEscalateTicket, isDispatchableTicket } from '../utils/ticketFilters.js';
 import { AlertCircle, Plus, Wrench, CheckSquare, AlertTriangle } from 'lucide-react';
 
@@ -15,7 +16,8 @@ const blankTicketForm = () => ({
   description: '',
   whatsapp_sos_sent: false,
   assigned_to: '',
-  priority: 'Medium'
+  priority: 'Medium',
+  scope_group_ids: []
 });
 
 export default function Tickets() {
@@ -142,7 +144,10 @@ export default function Tickets() {
                   <span className="block font-bold text-slate-900 whitespace-nowrap">{t.date_received}</span>
                   <span className="block text-[10px] text-slate-500 font-mono mt-0.5">{t.time_received || '--:--'}</span>
                 </td>
-                <td className="p-3 font-bold text-slate-900 whitespace-nowrap">{t.customer_name || 'N/A'}</td>
+                <td className="p-3 font-bold text-slate-900">
+                  <span className="whitespace-nowrap">{t.customer_name || 'N/A'}</span>
+                  {t.scope_group_path && <span className="mt-1 block max-w-[260px] whitespace-normal text-[10px] font-semibold text-violet-700">Impact: {t.scope_group_path} · {t.affected_customer_count || 0} customer(s)</span>}
+                </td>
                 <td className="p-3 text-slate-900 font-medium">{t.query_type}</td>
                 <td className="p-3 text-xs text-slate-700 min-w-[150px]">{t.location}</td>
                 <td className="p-3 text-center">
@@ -186,6 +191,7 @@ export default function Tickets() {
               <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Query Type</label><input type="text" required placeholder="Nature of Query" onChange={e => setFormData({...formData, query_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               
               <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Location</label><input type="text" required placeholder="Location" onChange={e => setFormData({...formData, location: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <CustomerGroupScopeSelect authFetch={authFetch} value={formData.scope_group_ids} onChange={(scope_group_ids) => setFormData({ ...formData, scope_group_ids })} />
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Service Type</label><select value={formData.service_type} onChange={e => setFormData({...formData, service_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option>FTTH</option><option>Enterprise</option></select></div>
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Priority</label><select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option>Low</option><option>Medium</option><option>High</option></select></div>
               

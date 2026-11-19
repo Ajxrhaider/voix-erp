@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CreditCard, Plus, Search, Upload, Users, X } from 'lucide-react';
+import { AlertTriangle, CreditCard, MapPin, Plus, Search, Upload, Users, X } from 'lucide-react';
 import { AppContext } from '../context/AppContext';
 import ModuleLayout from '../components/layout/ModuleLayout';
 import CustomerProfileModal from '../components/CRM/CustomerProfileModal';
@@ -13,7 +13,7 @@ const blankCustomer = () => ({
   voix_no: '', name: '', mac_address: '', customer_type: 'FTTH', service_plan: '', ip_address: '',
   payment_schedule: 'Monthly', amount_payable: '', amount_paid: '', bank_received: '',
   last_payment_date: '', next_due_date: '', outstanding_balance: '', address: '', email: '',
-  phone: '', status: 'Active'
+  phone: '', status: 'Active', group_id: ''
 });
 
 const initialPayment = (user) => ({
@@ -86,6 +86,10 @@ export default function Customers() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [isGroupSaving, setIsGroupSaving] = useState(false);
+  const [groupForm, setGroupForm] = useState({ name: '', group_type: 'line', parent_id: '' });
+  const [customerGroups, setCustomerGroups] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
   const [customerForm, setCustomerForm] = useState(blankCustomer);
   const [paymentData, setPaymentData] = useState(() => initialPayment(user));
@@ -93,6 +97,17 @@ export default function Customers() {
   const [formError, setFormError] = useState('');
   const [importSummary, setImportSummary] = useState(null);
   const [paymentReminderDays, setPaymentReminderDays] = useState(7);
+
+  const loadCustomerGroups = useCallback(async () => {
+    const response = await authFetch('/api/crm/customers/customer-groups');
+    const body = await response.json().catch(() => []);
+    if (!response.ok) throw new Error(body.message || 'Could not load customer location groups.');
+    setCustomerGroups(Array.isArray(body) ? body : []);
+  }, [authFetch]);
+
+  useEffect(() => {
+    loadCustomerGroups().catch((error) => setMessage({ type: 'error', text: error.message || 'Could not load customer location groups.' }));
+  }, [loadCustomerGroups]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -117,7 +132,7 @@ export default function Customers() {
     if (!query) return customers;
     return customers.filter((customer) => [
       customer.name, customer.voix_no, customer.mac_address, customer.phone,
-      customer.email, customer.ip_address, customer.address, customer.service_plan
+      customer.email, customer.ip_address, customer.address, customer.service_plan, customer.group_path
     ].some((value) => String(value || '').toLowerCase().includes(query)));
   }, [customers, searchQuery]);
 
@@ -186,6 +201,71 @@ export default function Customers() {
     }
   };
 
+  const handleGroupSave = async (event) => {
+    event.preventDefault();
+    setFormError('');
+    setIsGroupSaving(true);
+    try {
+      const response = await authFetch('/api/crm/customers/customer-groups', {
+        method: 'POST',
+        body: JSON.stringify({ ...groupForm, parent_id: groupForm.parent_id || null })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || 'Customer group could not be saved.');
+      setIsGroupModalOpen(false);
+      setGroupForm({ name: '', group_type: 'line', parent_id: '' });
+      await loadCustomerGroups();
+      setMessage({ type: 'success', text: 'Network location group saved.' });
+    } catch (error) {
+      setFormError(error.message || 'Customer group could not be saved.');
+    } finally {
+      setIsGroupSaving(false);
+    }
+  };
+
+  const handleAssignCustomerGroup = async (customer, groupId) => {
+    try {
+      const response = await authFetch(`/api/crm/customers/${encodeURIComponent(customer.id)}/group`, {
+        method: 'PATCH',
+        body: JSON.stringify({ group_id: groupId || null })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || 'Customer location could not be updated.');
+      await refreshSystemData();
+      setMessage({ type: 'success', text: `Location group updated for ${customer.name}.` });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Customer location could not be updated.' });
+    }
+  };
+
+  const availableGroupParents = customerGroups.filter((group) => {
+    if (groupForm.group_type === 'line') return group.group_type === 'network';
+    if (groupForm.group_type === 'estate') return ['network', 'line'].includes(group.group_type);
+    if (groupForm.group_type === 'house') return group.group_type === 'estate';
+    return false;
+  });
+
+  const downloadArchivedSource = async (archiveId, suggestedName) => {
+    try {
+      const response = await authFetch(`/api/crm/customers/import-archives/${encodeURIComponent(archiveId)}/download`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || 'Archived source file could not be downloaded.');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = suggestedName || 'source-file';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Archived source file could not be downloaded.' });
+    }
+  };
+
   const handleBulkImport = async (event) => {
     const selectedFiles = Array.from(event.target.files || []);
     if (selectedFiles.length === 0) return;
@@ -203,7 +283,7 @@ export default function Customers() {
       const importedCustomers = body.totals?.customersCreated || 0;
       const importedTickets = body.totals?.queriesCreated || 0;
       setMessage({ type: 'success', text: `Import complete: ${importedCustomers} new customers, ${importedTickets} new queries. See the import report below.` });
-      await refreshSystemData();
+      await Promise.all([refreshSystemData(), loadCustomerGroups()]);
     } catch (error) {
       setMessage({ type: 'error', text: error.message || 'Import failed.' });
     } finally {
@@ -291,6 +371,9 @@ export default function Customers() {
           <button onClick={() => openPaymentModal()} className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-600 sm:w-auto">
             <CreditCard className="h-4 w-4" /> Record payment
           </button>
+          <button onClick={() => { setFormError(''); setGroupForm({ name: '', group_type: 'line', parent_id: '' }); setIsGroupModalOpen(true); }} className="flex w-full items-center justify-center gap-2 rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-violet-600 sm:w-auto">
+            <MapPin className="h-4 w-4" /> Location groups
+          </button>
           <button onClick={() => { setCustomerForm(blankCustomer()); setFormError(''); setIsCustomerModalOpen(true); }} className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-500 sm:w-auto">
             <Plus className="h-4 w-4" /> Add customer
           </button>
@@ -312,7 +395,7 @@ export default function Customers() {
         <section className="mb-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-bold">Legacy import report</h3>
-            <p className="text-xs text-blue-800">Re-importing the same source rows updates existing records.</p>
+            <p className="text-xs text-blue-800">Mapped rows can be re-imported; each original upload is retained unchanged.</p>
           </div>
           <div className="mt-3 space-y-2">
             {importSummary.summaries?.map((summary, index) => (
@@ -321,16 +404,26 @@ export default function Customers() {
                 {summary.message && <p className="mt-0.5 text-xs text-rose-700">{summary.message}</p>}
                 <p className="mt-1 text-xs text-blue-800">
                   {summary.customersCreated !== undefined && `${summary.customersCreated} created · ${summary.customersUpdated || 0} merged`}
+                  {summary.customersGrouped !== undefined && ` · ${summary.customersGrouped} assigned to a network location group`}
                   {summary.paymentEntriesImported !== undefined && ` · ${summary.paymentEntriesImported} payment periods`}
+                  {summary.paymentRowsImported !== undefined && ` · ${summary.paymentRowsImported} profile payment rows`}
+                  {summary.supportRowsImported !== undefined && ` · ${summary.supportRowsImported} profile support rows`}
+                  {summary.profileTabsImported !== undefined && ` · ${summary.profileTabsImported} profile tabs`}
                   {summary.queriesCreated !== undefined && `${summary.queriesCreated} queries created · ${summary.queriesUpdated || 0} updated`}
                   {summary.deploymentsCreated !== undefined && `${summary.deploymentsCreated} deployments created · ${summary.deploymentsUpdated || 0} updated`}
                   {summary.ledgerEntriesImported !== undefined && `${summary.ledgerEntriesImported} ledger rows imported`}
                   {summary.rowsSkipped > 0 && ` · ${summary.rowsSkipped} empty/invalid rows skipped`}
                 </p>
+                {summary.type === 'Original file archived' && (
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md bg-blue-50 px-2.5 py-2 text-xs text-blue-900">
+                    <span>{summary.fileBytes?.toLocaleString()} bytes · {summary.sheetsArchived} sheets · {summary.sourceRowsPreserved?.toLocaleString()} source rows retained</span>
+                    <button type="button" onClick={() => downloadArchivedSource(summary.archiveId, summary.originalName)} className="rounded-md border border-blue-200 bg-white px-2.5 py-1.5 font-bold text-blue-800 hover:bg-blue-100">Download original</button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
-          <p className="mt-3 text-xs text-blue-800">Customer lists, enterprise lists, query logs, deployments, day-book expenses and the provided HTML income day book are supported. Blank templates and PDFs are not imported as records.</p>
+          <p className="mt-3 text-xs text-blue-800">Original XLSX, XLS, CSV and HTML uploads are archived unchanged, with non-empty source rows indexed. Mapped imports include the customer profile workbook’s individual payments and support logs, client and enterprise lists, query logs, deployments, day books and the HTML income records. Unmapped cells remain in the downloadable original.</p>
         </section>
       )}
 
@@ -357,12 +450,13 @@ export default function Customers() {
       </div>
 
       <div className="w-full overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <table className="w-full min-w-[1120px] text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-slate-700">
             <tr>
               <th className="p-3 font-bold">Voix No.</th>
               <th className="p-3 font-bold">Customer</th>
               <th className="p-3 font-bold">Service</th>
+              <th className="p-3 font-bold">Network location</th>
               <th className="p-3 font-bold">Subscription</th>
               <th className="p-3 font-bold">Next due</th>
               <th className="p-3 text-right font-bold">Balance</th>
@@ -384,6 +478,19 @@ export default function Customers() {
                     <p className="mt-0.5 text-xs text-slate-500">{customer.ip_address || 'No IP assigned'} · {customer.mac_address || 'No MAC recorded'}</p>
                   </td>
                   <td className="p-3">
+                    {canManageCustomers ? (
+                      <select
+                        value={customer.group_id || ''}
+                        onChange={(event) => handleAssignCustomerGroup(customer, event.target.value)}
+                        aria-label={`Network location group for ${customer.name}`}
+                        className="w-full min-w-48 rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-900"
+                      >
+                        <option value="">Not assigned</option>
+                        {customerGroups.map((group) => <option key={group.id} value={group.id}>{group.path || group.name}</option>)}
+                      </select>
+                    ) : <span className="text-xs font-semibold text-slate-700">{customer.group_path || 'Not assigned'}</span>}
+                  </td>
+                  <td className="p-3">
                     <p className="font-semibold text-slate-800">{customer.payment_schedule || '—'}</p>
                     <p className="mt-0.5 text-xs text-slate-500">Payable {`₦${Number(customer.amount_payable || 0).toLocaleString('en-NG')}`}</p>
                   </td>
@@ -400,7 +507,7 @@ export default function Customers() {
                 </tr>
               );
             })}
-            {filteredCustomers.length === 0 && <tr><td colSpan="7" className="p-8 text-center font-medium text-slate-500">No customers match this search.</td></tr>}
+            {filteredCustomers.length === 0 && <tr><td colSpan="8" className="p-8 text-center font-medium text-slate-500">No customers match this search.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -538,6 +645,12 @@ export default function Customers() {
               <Field label="Account status">
                 <select value={customerForm.status} onChange={(event) => updateCustomerField('status', event.target.value)} className={inputClass}><option>Active</option><option>Inactive</option><option>Suspended</option></select>
               </Field>
+              <Field label="Location group">
+                <select value={customerForm.group_id || ''} onChange={(event) => updateCustomerField('group_id', event.target.value)} className={inputClass}>
+                  <option value="">Not assigned</option>
+                  {customerGroups.map((group) => <option key={group.id} value={group.id}>{group.path || group.name}</option>)}
+                </select>
+              </Field>
               <Field label="Phone number"><input type="tel" value={customerForm.phone} onChange={(event) => updateCustomerField('phone', event.target.value)} className={inputClass} /></Field>
               <Field label="Email address"><input type="email" value={customerForm.email} onChange={(event) => updateCustomerField('email', event.target.value)} className={inputClass} /></Field>
               <Field label="MAC address"><input type="text" value={customerForm.mac_address} onChange={(event) => updateCustomerField('mac_address', event.target.value)} className={inputClass} /></Field>
@@ -555,6 +668,55 @@ export default function Customers() {
               <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:col-span-2 sm:flex-row sm:justify-end lg:col-span-3">
                 <button type="button" onClick={() => setIsCustomerModalOpen(false)} className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-200">Cancel</button>
                 <button type="submit" className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700">Create profile</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {isGroupModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-2 sm:p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsGroupModalOpen(false)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="customer-groups-title" className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:p-6">
+            <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <h2 id="customer-groups-title" className="text-lg font-black text-slate-900">Network location groups</h2>
+                <p className="mt-1 text-xs text-slate-500">Build Main 1 → line → estate → house. Estates can also sit directly under Main 1.</p>
+              </div>
+              <button onClick={() => setIsGroupModalOpen(false)} aria-label="Close location group manager" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="mb-4 flex flex-wrap gap-2 text-[10px] font-bold text-slate-700">
+              {['network', 'line', 'estate', 'house'].map((type) => (
+                <span key={type} className="rounded-full bg-slate-100 px-2.5 py-1">{type}: {customerGroups.filter((group) => group.group_type === type).length}</span>
+              ))}
+            </div>
+            {formError && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">{formError}</p>}
+            <form onSubmit={handleGroupSave} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Group type">
+                <select value={groupForm.group_type} onChange={(event) => setGroupForm({ ...groupForm, group_type: event.target.value, parent_id: '' })} className={inputClass}>
+                  <option value="network">Network (Main 1)</option>
+                  <option value="line">Line</option>
+                  <option value="estate">Estate</option>
+                  <option value="house">House</option>
+                </select>
+              </Field>
+              <Field label="Group name">
+                <input required autoFocus value={groupForm.name} onChange={(event) => setGroupForm({ ...groupForm, name: event.target.value })} placeholder={groupForm.group_type === 'network' ? 'Main 1' : 'Enter the group name'} className={inputClass} />
+              </Field>
+              {groupForm.group_type !== 'network' && (
+                <Field label="Parent group" className="sm:col-span-2">
+                  <select required value={groupForm.parent_id} onChange={(event) => setGroupForm({ ...groupForm, parent_id: event.target.value })} className={inputClass}>
+                    <option value="">Select parent…</option>
+                    {availableGroupParents.map((group) => <option key={group.id} value={group.id}>{group.path || group.name}</option>)}
+                  </select>
+                </Field>
+              )}
+              <p className="text-xs leading-relaxed text-slate-600 sm:col-span-2">
+                Select customers’ house, estate or line groups when logging an issue. A Main 1 impact includes every customer, even if their individual location has not been assigned yet.
+              </p>
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:col-span-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setIsGroupModalOpen(false)} className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-200">Cancel</button>
+                <button type="submit" disabled={isGroupSaving} className="rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-violet-800 disabled:opacity-60">{isGroupSaving ? 'Saving…' : 'Save group'}</button>
               </div>
             </form>
           </section>

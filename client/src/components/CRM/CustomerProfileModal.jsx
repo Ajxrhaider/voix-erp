@@ -54,6 +54,8 @@ export default function CustomerProfileModal({ customer, profileData, loading, o
 
   const queries = profileData?.queries || [];
   const payments = profileData?.payments || [];
+  const legacyPayments = profileData?.legacy_payments || [];
+  const legacySupport = profileData?.legacy_support || [];
   const deployments = profileData?.deployments || [];
   const due = dueStatus(profile.next_due_date);
   const totalSubscriptionPayments = payments
@@ -127,6 +129,7 @@ export default function CustomerProfileModal({ customer, profileData, loading, o
               <Detail label="MAC address" value={profile.mac_address} />
               <Detail label="Assigned IP address" value={profile.ip_address} />
               <Detail label="Payment schedule" value={profile.payment_schedule} icon={CalendarClock} />
+              <Detail label="Network group / location path" value={profile.group_path} icon={MapPin} />
               <Detail label="Bank received" value={profile.bank_received} />
               <Detail label="Account created" value={formatDate(profile.created_at)} />
             </div>
@@ -154,6 +157,11 @@ export default function CustomerProfileModal({ customer, profileData, loading, o
                           {query.time_received ? ` · ${query.time_received}` : ''}
                           {query.location ? ` · ${query.location}` : ''}
                         </p>
+                        {query.scope_group_path && (
+                          <p className="mt-1 text-[11px] font-semibold text-violet-700">
+                            Impact scope: {query.scope_group_path}
+                          </p>
+                        )}
                       </div>
                       <span className={`w-fit rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${['resolved', 'closed'].includes(String(query.status).toLowerCase()) ? 'bg-emerald-100 text-emerald-800' : String(query.status).toLowerCase() === 'escalated' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-900'}`}>
                         {query.status || 'Open'}
@@ -176,6 +184,30 @@ export default function CustomerProfileModal({ customer, profileData, loading, o
                     )}
                   </article>
                 ))}
+              </div>
+            )}
+            {legacySupport.length > 0 && (
+              <div className="mt-5 border-t border-slate-200 pt-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h4 className="text-xs font-black uppercase tracking-wide text-slate-700">Imported profile-sheet interaction log</h4>
+                  <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-800">{legacySupport.length} record{legacySupport.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="space-y-2">
+                  {legacySupport.map((event) => (
+                    <article key={event.id} className="rounded-lg border border-violet-100 bg-violet-50/50 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-bold text-slate-900">{event.issue_category || 'Support interaction'}</p>
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-700">{event.status || '—'}</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {formatDate(event.event_date || event.event_date_raw)}{event.event_time ? ` · ${event.event_time}` : ''}
+                        {event.logged_by ? ` · Logged by ${event.logged_by}` : ''}
+                      </p>
+                      {event.details && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-700">{event.details}</p>}
+                      {event.action_taken && <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600"><strong>Action:</strong> {event.action_taken}</p>}
+                    </article>
+                  ))}
+                </div>
               </div>
             )}
           </section>
@@ -231,6 +263,42 @@ export default function CustomerProfileModal({ customer, profileData, loading, o
             )}
             <p className="mt-2 text-[11px] text-slate-500">Legacy monthly spreadsheet amounts are retained as month-level totals; the original sheets did not provide individual payment references or exact dates.</p>
           </section>
+
+          {legacyPayments.length > 0 && (
+            <section>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="flex items-center gap-2 text-sm font-black text-slate-900"><CreditCard className="h-4 w-4 text-violet-700" /> Imported profile-sheet payment tracking</h3>
+                <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-800">{legacyPayments.length} record{legacyPayments.length === 1 ? '' : 's'}</span>
+              </div>
+              <p className="mb-3 text-[11px] text-slate-500">Original per-payment rows are shown separately from accounting-ledger totals; blank or unparseable amounts remain available from the archived source file.</p>
+              <div className="space-y-2">
+                {legacyPayments.map((payment) => (
+                  <article key={payment.id} className="grid grid-cols-1 gap-2 rounded-lg border border-violet-100 bg-violet-50/50 p-3 sm:grid-cols-5 sm:items-center">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Date paid</p>
+                      <p className="text-xs font-semibold text-slate-900">{formatDate(payment.date_paid || payment.date_paid_raw)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Amount</p>
+                      <p className="text-xs font-bold text-emerald-800">{payment.amount === null ? emptyValue(payment.amount_raw) : formatMoney(payment.amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Method</p>
+                      <p className="text-xs text-slate-800">{emptyValue(payment.payment_method)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Reference</p>
+                      <p className="break-words text-xs font-mono text-slate-800">{emptyValue(payment.reference_no)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Expiry date</p>
+                      <p className="text-xs text-slate-800">{formatDate(payment.expiry_date || payment.expiry_date_raw)}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section>
             <div className="mb-3 flex items-center justify-between gap-3">
