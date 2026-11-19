@@ -2,6 +2,11 @@ import express from 'express';
 import db, { generateId } from '../db.js';
 import { authenticateToken, requireRoles } from './auth.js';
 import { sendEmail } from '../utils/mailer.js';
+import {
+  getCustomerGroupPath,
+  getCustomerIdsInGroup,
+  linkTicketToScope
+} from '../services/customerGroups.js';
 
 const router = express.Router();
 const CAN_DISPATCH_WORK_ORDER = ['NOC', 'HOD NOC', 'HOD Fiber', 'Management', 'GM', 'Dev'];
@@ -21,16 +26,45 @@ function validIsoDate(value) {
 }
 
 router.get('/', authenticateToken, (_req, res) => {
-  res.json(db.prepare('SELECT * FROM tickets ORDER BY created_at DESC').all());
+  const tickets = db.prepare(`
+    SELECT tickets.*, scope_group.name AS scope_group_name,
+      count(DISTINCT ticket_links.customer_id) AS affected_customer_count
+    FROM tickets
+    LEFT JOIN ticket_customer_links AS ticket_links ON ticket_links.ticket_id = tickets.id
+    LEFT JOIN customer_groups AS scope_group ON scope_group.id = tickets.scope_group_id
+    GROUP BY tickets.id
+    ORDER BY tickets.created_at DESC, tickets.id DESC
+  `).all();
+  res.json(tickets.map((ticket) => {
+    const scopeGroupIds = db.prepare('SELECT group_id FROM ticket_scope_groups WHERE ticket_id = ? ORDER BY created_at, group_id')
+      .all(ticket.id).map((row) => row.group_id);
+    const effectiveScopeIds = scopeGroupIds.length ? scopeGroupIds : (ticket.scope_group_id ? [ticket.scope_group_id] : []);
+    const scopeGroupPaths = effectiveScopeIds.map((id) => getCustomerGroupPath(id)).filter(Boolean);
+    return {
+      ...ticket,
+      scope_group_ids: effectiveScopeIds,
+      scope_group_paths: scopeGroupPaths,
+      scope_group_path: scopeGroupPaths.join('; ')
+    };
+  }));
 });
 
 router.post('/', authenticateToken, (req, res) => {
   const {
     customer_id, customer_name, title, description, category, priority,
     date_received, time_received, customer_ip, query_type, location,
-    service_type, whatsapp_sos_sent, assigned_to
+    service_type, whatsapp_sos_sent, assigned_to, scope_group_id, scope_group_ids
   } = req.body;
-  const cleanName = String(customer_name || '').trim() || 'Unidentified customer';
+  const requestedGroupIds = [...new Set([
+    ...(Array.isArray(scope_group_ids) ? scope_group_ids : []),
+    scope_group_id
+  ].map((id) => String(id || '').trim()).filter(Boolean))];
+  const scopeGroups = requestedGroupIds.map((id) => db.prepare('SELECT id, name FROM customer_groups WHERE id = ?').get(id));
+  if (scopeGroups.some((group) => !group)) return res.status(400).json({ message: 'One or more selected impact groups were not found.' });
+  const scopeGroupPaths = scopeGroups.map((group) => getCustomerGroupPath(group.id));
+
+  const rawName = String(customer_name || '').trim();
+  const cleanName = rawName || (scopeGroupPaths.length ? scopeGroupPaths.join('; ') : 'Unidentified customer');
   const cleanTitle = String(title || query_type || '').trim() || 'Customer query';
   const cleanCategory = String(category || query_type || '').trim() || 'General inquiry';
   const receivedDate = date_received ? validIsoDate(date_received) : new Date().toISOString().slice(0, 10);
@@ -43,37 +77,55 @@ router.post('/', authenticateToken, (req, res) => {
         WHERE (trim(?) <> '' AND lower(trim(name)) = lower(trim(?)))
           OR (trim(?) <> '' AND trim(ip_address) = trim(?))
         LIMIT 1
-      `).get(cleanName, cleanName, customer_ip || '', customer_ip || '');
+      `).get(rawName, rawName, customer_ip || '', customer_ip || '');
   if (customer_id && !linkedCustomer) return res.status(400).json({ message: 'Selected customer profile was not found.' });
+  if (linkedCustomer && scopeGroups.length > 0
+    && !scopeGroups.some((group) => getCustomerIdsInGroup(group.id).includes(linkedCustomer.id))) {
+    return res.status(400).json({ message: 'The reporting customer must belong to at least one selected impact group.' });
+  }
+  const locationLabel = String(location || '').trim() || scopeGroupPaths.join('; ');
 
   try {
-    const ticketId = generateId('ticket', 'TKT');
-    db.prepare(`
-      INSERT INTO tickets (
-        id, customer_id, customer_name, title, description, category, priority, status,
-        date_received, time_received, customer_ip, query_type, location, service_type,
-        opened_by, whatsapp_sos_sent, assigned_to
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Open', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      ticketId,
-      linkedCustomer?.id || null,
-      cleanName,
-      cleanTitle,
-      String(description || '').trim(),
-      cleanCategory,
-      String(priority || 'Medium'),
-      receivedDate,
-      String(time_received || '').trim(),
-      String(customer_ip || '').trim(),
-      String(query_type || '').trim(),
-      String(location || '').trim(),
-      String(service_type || 'FTTH').trim(),
-      req.user.fullname || req.user.username || 'System',
-      whatsapp_sos_sent ? 1 : 0,
-      String(assigned_to || '').trim()
-    );
+    const createTicket = db.transaction(() => {
+      const ticketId = generateId('ticket', 'TKT');
+      db.prepare(`
+        INSERT INTO tickets (
+          id, customer_id, scope_group_id, customer_name, title, description, category, priority, status,
+          date_received, time_received, customer_ip, query_type, location, service_type,
+          opened_by, whatsapp_sos_sent, assigned_to
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Open', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        ticketId,
+        linkedCustomer?.id || null,
+        requestedGroupIds[0] || null,
+        cleanName,
+        cleanTitle,
+        String(description || '').trim(),
+        cleanCategory,
+        String(priority || 'Medium'),
+        receivedDate,
+        String(time_received || '').trim(),
+        String(customer_ip || '').trim(),
+        String(query_type || '').trim(),
+        locationLabel,
+        String(service_type || 'FTTH').trim(),
+        req.user.fullname || req.user.username || 'System',
+        whatsapp_sos_sent ? 1 : 0,
+        String(assigned_to || '').trim()
+      );
+      linkTicketToScope(ticketId, { customerId: linkedCustomer?.id || null, groupIds: requestedGroupIds });
+      return ticketId;
+    });
+    const ticketId = createTicket();
+    const affectedCustomerCount = db.prepare('SELECT count(*) AS count FROM ticket_customer_links WHERE ticket_id = ?').get(ticketId).count;
     emitChange(req);
-    res.status(201).json({ id: ticketId });
+    res.status(201).json({
+      id: ticketId,
+      scope_group_id: requestedGroupIds[0] || null,
+      scope_group_ids: requestedGroupIds,
+      scope_group_paths: scopeGroupPaths,
+      affected_customer_count: affectedCustomerCount
+    });
   } catch (error) {
     if (error.code?.startsWith('SQLITE_CONSTRAINT')) {
       return res.status(409).json({ message: 'The ticket could not be saved because a linked record is invalid.' });

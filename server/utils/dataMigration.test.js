@@ -43,6 +43,36 @@ function htmlIncomeFile(grossAmount = 10750) {
   };
 }
 
+function excelDateSerial(isoDate) {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / 86400000) + 25569;
+}
+
+function profileHistoryTab(name, voixNo, address, dateSerial, reference) {
+  const rows = Array.from({ length: 11 }, () => []);
+  rows[2][0] = 'Customer Name';
+  rows[2][1] = name;
+  rows[3][0] = 'Voix Number';
+  rows[3][1] = voixNo;
+  rows[4][0] = 'Physical Address';
+  rows[4][1] = address;
+  rows[5][0] = 'Account Status';
+  rows[5][1] = 'Active';
+  rows[10][4] = dateSerial;
+  rows[10][5] = 14000;
+  rows[10][6] = 'Cash';
+  rows[10][7] = reference;
+  rows[10][8] = dateSerial + 30;
+  rows[10][11] = dateSerial;
+  rows[10][12] = '9:30 AM';
+  rows[10][13] = 'Operator';
+  rows[10][14] = 'Connectivity';
+  rows[10][15] = 'Customer reported an outage';
+  rows[10][16] = 'Replaced damaged drop cable';
+  rows[10][17] = 'Resolved';
+  return XLSX.utils.aoa_to_sheet(rows);
+}
+
 function legacyFiles({
   monthlyPayment = 9000,
   incomeGross = 10750,
@@ -190,4 +220,55 @@ test('imports the supported legacy account, payment, income, expense, query and 
   assert.equal(unchangedImport.totals.paymentEntriesImported || 0, 0);
   assert.equal(unchangedImport.totals.ledgerEntriesImported || 0, 0);
   assert.equal(db.prepare("SELECT count(*) AS count FROM accounting_ledger").get().count, 6);
+});
+
+test('batches profile tabs, parses numeric Excel dates, and preserves the original workbook on repeat imports', () => {
+  const workbook = XLSX.utils.book_new();
+  const dateSerial = excelDateSerial('2025-01-15');
+  XLSX.utils.book_append_sheet(workbook, profileHistoryTab('Profile History One', 'VN-PROFILE-TEST-001', 'House 12', dateSerial, 'PROFILE-REF-001'), '001');
+  XLSX.utils.book_append_sheet(workbook, profileHistoryTab('Profile History Two', 'VN-PROFILE-TEST-002', 'House 14', dateSerial + 1, 'PROFILE-REF-002'), '002');
+  const file = {
+    originalname: 'VOIX Customer Profile Sheet - profile-history-fixture.xlsx',
+    buffer: XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
+  };
+
+  const firstImport = importLegacyFiles([file]);
+  assert.equal(firstImport.summaries.filter((summary) => summary.type === 'Customer profile history').length, 1);
+  const summary = firstImport.summaries.find((item) => item.type === 'Customer profile history');
+  assert.equal(summary.profileTabsImported, 2);
+  assert.equal(summary.profileTabsFailed, 0);
+  assert.equal(summary.paymentRowsImported, 2);
+  assert.equal(summary.supportRowsImported, 2);
+  assert.equal(summary.unlinkedProfiles, 0);
+
+  const payments = db.prepare(`
+    SELECT source_sheet, date_paid, amount, expiry_date
+    FROM legacy_customer_payments
+    WHERE source_name = ?
+    ORDER BY source_sheet
+  `).all(file.originalname);
+  assert.deepEqual(payments, [
+    { source_sheet: '001', date_paid: '2025-01-15', amount: 14000, expiry_date: '2025-02-14' },
+    { source_sheet: '002', date_paid: '2025-01-16', amount: 14000, expiry_date: '2025-02-15' }
+  ]);
+  const support = db.prepare(`
+    SELECT source_sheet, event_date, details, status
+    FROM legacy_customer_support_history
+    WHERE source_name = ?
+    ORDER BY source_sheet
+  `).all(file.originalname);
+  assert.deepEqual(support, [
+    { source_sheet: '001', event_date: '2025-01-15', details: 'Customer reported an outage', status: 'Resolved' },
+    { source_sheet: '002', event_date: '2025-01-16', details: 'Customer reported an outage', status: 'Resolved' }
+  ]);
+
+  const archive = db.prepare('SELECT file_data FROM import_archives WHERE sha256 = ?')
+    .get(firstImport.summaries.find((item) => item.type === 'Original file archived').fileSha256);
+  assert.ok(Buffer.from(archive.file_data).equals(file.buffer), 'archived bytes should match the submitted workbook');
+
+  const secondImport = importLegacyFiles([file]);
+  assert.equal(secondImport.summaries.find((item) => item.type === 'Customer profile history')?.profileTabsFailed, 0);
+  assert.equal(db.prepare('SELECT count(*) AS count FROM legacy_customer_payments WHERE source_name = ?').get(file.originalname).count, 2);
+  assert.equal(db.prepare('SELECT count(*) AS count FROM legacy_customer_support_history WHERE source_name = ?').get(file.originalname).count, 2);
+  assert.equal(db.prepare('SELECT count(*) AS count FROM import_archives WHERE sha256 = ?').get(firstImport.summaries.find((item) => item.type === 'Original file archived').fileSha256).count, 1);
 });

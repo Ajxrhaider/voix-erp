@@ -1,6 +1,15 @@
 import { createHash } from 'node:crypto';
 import * as XLSX from 'xlsx';
 import db, { generateId } from '../db.js';
+import {
+  ensureImportedCustomerGroup,
+  findCustomerGroupByName,
+  getEstateCodeFromVoixNumber,
+  getLineCodeFromVoixNumber,
+  getOrCreateCustomerGroup,
+  isMainNetworkLabel,
+  linkTicketToScope
+} from '../services/customerGroups.js';
 
 const monthNames = [
   'january', 'february', 'march', 'april', 'may', 'june',
@@ -28,9 +37,11 @@ function parseAmount(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   const raw = cleanText(value);
-  if (!raw || /^(?:#|n\/a$|na$|-)$/i.test(raw)) return null;
+  if (!raw || raw.startsWith('=') || /^(?:#|n\/a$|na$|-)$/i.test(raw)) return null;
   const negative = /^\(.*\)$/.test(raw);
-  const parsed = Number(raw.replace(/[₦$€£,\s()]/g, '').replace(/[^0-9.+-]/g, ''));
+  const numeric = raw.replace(/[₦$€£,\s()]/g, '').replace(/[^0-9.+-]/g, '');
+  if (!numeric || !/\d/.test(numeric)) return null;
+  const parsed = Number(numeric);
   if (!Number.isFinite(parsed)) return null;
   return negative ? -Math.abs(parsed) : parsed;
 }
@@ -58,7 +69,7 @@ function toIsoDate(value, { dayFirst = true } = {}) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
 
   if (typeof value === 'number' && Number.isFinite(value)) {
-    const parsed = XLSX.SSF.parse_date_code(value);
+    const parsed = (XLSX.SSF || XLSX.default.SSF).parse_date_code(value);
     if (parsed?.y && parsed?.m && parsed?.d) {
       return validIsoDate(parsed.y, parsed.m, parsed.d);
     }
@@ -152,12 +163,57 @@ function detectKind(headers) {
   return null;
 }
 
+function worksheetMatrix(worksheet) {
+  const matrix = [];
+  for (const [address, cell] of Object.entries(worksheet)) {
+    if (address.startsWith('!') || !/^[A-Z]+\d+$/i.test(address) || !cell) continue;
+    let cellValue = cell.v;
+    if ((cellValue === undefined || cellValue === '') && cell.f) cellValue = `=${cell.f}`;
+    if (cellValue === undefined || cellValue === null || cellValue === '') continue;
+    const position = XLSX.utils.decode_cell(address);
+    matrix[position.r] ||= [];
+    matrix[position.r][position.c] = cellValue;
+  }
+  return matrix;
+}
+
+function matrixHasContent(values = []) {
+  return values.some((entry) => entry !== undefined && entry !== null && cleanText(entry) !== '');
+}
+
+function archiveRowsFromMatrix(matrix, headers = null) {
+  const archived = [];
+  for (let rowIndex = 0; rowIndex < matrix.length; rowIndex += 1) {
+    const cells = matrix[rowIndex] || [];
+    if (!matrixHasContent(cells)) continue;
+    archived.push({ rowNumber: rowIndex + 1, headers, cells });
+  }
+  return archived;
+}
+
+function sourceForSheet(source, sheetName) {
+  return `${source}${sheetName && sheetName !== 'Sheet1' ? ` · ${sheetName}` : ''}`;
+}
+
+function hasCustomerIdentity(row) {
+  return Boolean(
+    value(row, 'name', 'customer name', 'customer', 'enterprise name', 'client name', 'customer enterprise')
+    || value(row, 'customer id', 'customer id number', 'voix number', 'voix no', 'subscriber id', 'account id')
+  );
+}
+
+function findSectionHeading(row) {
+  const candidate = cleanText(value(row, 'column 1', 's n', 'serial no', 'serial number', 'column 2', 'estate name', 'estate'));
+  if (!candidate || candidate.startsWith('=') || /^\d+(?:\.\d+)?$/.test(candidate)) return '';
+  return candidate;
+}
+
 function buildSheetRows(matrix, source, sheetName) {
   let detected = null;
   const searchLimit = Math.min(matrix.length, 30);
   for (let rowIndex = 0; rowIndex < searchLimit; rowIndex += 1) {
-    const rawHeaders = (matrix[rowIndex] || []).map((value, index) => {
-      const normalized = normalizeHeader(value);
+    const rawHeaders = (matrix[rowIndex] || []).map((header, index) => {
+      const normalized = normalizeHeader(header);
       return normalized || `column ${index + 1}`;
     });
     const kind = detectKind(rawHeaders);
@@ -166,21 +222,148 @@ function buildSheetRows(matrix, source, sheetName) {
       break;
     }
   }
-  if (!detected) return null;
 
-  const rows = [];
+  const rawHeaders = detected?.headers || null;
+  const archiveRows = archiveRowsFromMatrix(matrix, rawHeaders);
+  const sheet = {
+    source: sourceForSheet(source, sheetName),
+    sheetName: sheetName || 'Sheet1',
+    kind: detected?.kind || 'raw',
+    rows: [],
+    archiveRows
+  };
+  if (!detected) return sheet;
+
+  let sectionName = '';
   for (let index = detected.headerIndex + 1; index < matrix.length; index += 1) {
     const values = matrix[index] || [];
-    if (!values.some((value) => cleanText(value) !== '')) continue;
+    if (!matrixHasContent(values)) continue;
     const row = {};
     detected.headers.forEach((header, columnIndex) => {
       row[header] = values[columnIndex] ?? '';
     });
     row.__sourceRowNumber = index + 1;
-    rows.push(row);
-  }
+    row.__rawCells = values;
+    row.__rawHeaders = detected.headers;
 
-  return { source: `${source}${sheetName ? ` · ${sheetName}` : ''}`, kind: detected.kind, rows };
+    if (detected.kind === 'customers' && !hasCustomerIdentity(row)) {
+      sectionName = findSectionHeading(row) || sectionName;
+      continue;
+    }
+    if (detected.kind === 'queries'
+      && !value(row, 'vnq', 'vnq no', 'vnq number', 'ticket no', 'ticket number', 'ticket id', 'query id')
+      && !value(row, 'date received', 'issue', 'issue description', 'issue description customer s words or error message', 'customer name', 'customer name optional')) continue;
+    if (detected.kind === 'deployments' && !value(row, 'customer name', 'customer', 'name')) continue;
+    if (detected.kind === 'income'
+      && !value(row, 'customer name', 'customer enterprise', 'enterprise name')) continue;
+    if (detected.kind === 'daybook'
+      && !value(row, 'date', 'particulars', 'description', 'total amount', 'amount')) continue;
+
+    if (detected.kind === 'customers') row.__estateName = sectionName;
+    sheet.rows.push(row);
+  }
+  return sheet;
+}
+
+function parseCustomerLogSheet(worksheet, source, sheetName) {
+  const matrix = worksheetMatrix(worksheet);
+  const sheet = {
+    source: sourceForSheet(source, sheetName),
+    sheetName,
+    kind: 'customers',
+    rows: [],
+    archiveRows: archiveRowsFromMatrix(matrix)
+  };
+  let estateName = '';
+  for (let index = 0; index < matrix.length; index += 1) {
+    const cells = matrix[index] || [];
+    if (!matrixHasContent(cells)) continue;
+    const voixNo = cleanText(cells[2]);
+    if (!/^VN-/i.test(voixNo)) {
+      const heading = cleanText(cells[0]);
+      const isColumnHeaderRow = index === 0 && cells.slice(1).some((cell) => /^column\s+\d+$/i.test(cleanText(cell)));
+      if (heading && (isColumnHeaderRow || !matrixHasContent(cells.slice(1)))) estateName = heading;
+      continue;
+    }
+    sheet.rows.push({
+      'house name': cells[0] ?? '',
+      'service type': cells[1] ?? '',
+      'customer id': voixNo,
+      'mac address': cells[3] ?? '',
+      name: cells[4] ?? '',
+      'phone number': cells[5] ?? '',
+      'email address': cells[6] ?? '',
+      'estate name': estateName,
+      __estateName: estateName,
+      __sourceRowNumber: index + 1,
+      __rawCells: cells,
+      __rawHeaders: ['house name', 'service type', 'customer id', 'mac address', 'name', 'phone number', 'email address']
+    });
+  }
+  return sheet;
+}
+
+function parseProfileHistorySheet(worksheet, source, sheetName) {
+  const matrix = worksheetMatrix(worksheet);
+  const metadata = {};
+  for (let rowIndex = 2; rowIndex < Math.min(matrix.length, 30); rowIndex += 1) {
+    const cells = matrix[rowIndex] || [];
+    const label = normalizeHeader(cells[0]);
+    if (label) metadata[label] = cells[1] ?? '';
+  }
+  const fields = {
+    name: metadata['customer name'] || '',
+    phone: metadata['phone number'] || '',
+    address: metadata['physical address'] || '',
+    email: metadata['email address'] || '',
+    voixNo: metadata['voix number'] || metadata['voix no'] || '',
+    macAddress: metadata['mac address'] || '',
+    status: metadata['account status'] || ''
+  };
+  const payments = [];
+  const support = [];
+  for (let rowIndex = 2; rowIndex < matrix.length; rowIndex += 1) {
+    const cells = matrix[rowIndex] || [];
+    const paymentCells = cells.slice(4, 9);
+    if (matrixHasContent(paymentCells)) {
+      payments.push({
+        sourceRowNumber: rowIndex + 1,
+        datePaidRaw: paymentCells[0] ?? '',
+        amountRaw: paymentCells[1] ?? '',
+        paymentMethod: paymentCells[2] ?? '',
+        referenceNo: paymentCells[3] ?? '',
+        expiryDateRaw: paymentCells[4] ?? '',
+        rawCells: paymentCells
+      });
+    }
+    const supportCells = cells.slice(11, 18);
+    if (matrixHasContent(supportCells)) {
+      support.push({
+        sourceRowNumber: rowIndex + 1,
+        eventDateRaw: supportCells[0] ?? '',
+        eventTime: supportCells[1] ?? '',
+        loggedBy: supportCells[2] ?? '',
+        issueCategory: supportCells[3] ?? '',
+        details: supportCells[4] ?? '',
+        actionTaken: supportCells[5] ?? '',
+        status: supportCells[6] ?? '',
+        rawCells: supportCells
+      });
+    }
+  }
+  return {
+    source: sourceForSheet(source, sheetName),
+    sheetName,
+    kind: 'profile_history',
+    rows: [{
+      sourceSheet: sheetName,
+      metadata: fields,
+      sourceRowNumber: 1,
+      payments,
+      support
+    }],
+    archiveRows: archiveRowsFromMatrix(matrix)
+  };
 }
 
 function parseEmbeddedIncomeRecords(buffer, source) {
@@ -216,27 +399,36 @@ function parseEmbeddedIncomeRecords(buffer, source) {
     return record;
   }).filter((record) => record['customer name'] && record['gross amount'] !== undefined);
 
-  return rows.length ? { source, kind: 'income', rows } : null;
+  if (!rows.length) return null;
+  return {
+    source,
+    sheetName: 'INITIAL_INCOME_RECORDS',
+    kind: 'income',
+    rows,
+    archiveRows: rows.map((row) => ({ rowNumber: row.__sourceRowNumber, headers: Object.keys(row), cells: row }))
+  };
 }
 
 export function readMigrationFile(file) {
-  const extension = String(file.originalname || '').split('.').pop().toLowerCase();
+  const originalName = String(file.originalname || 'Uploaded spreadsheet');
+  const extension = originalName.split('.').pop().toLowerCase();
   if (extension === 'html' || extension === 'htm') {
-    const embeddedIncome = parseEmbeddedIncomeRecords(file.buffer, file.originalname);
+    const embeddedIncome = parseEmbeddedIncomeRecords(file.buffer, originalName);
     if (embeddedIncome) return [embeddedIncome];
   }
 
   const workbook = XLSX.read(file.buffer, { type: 'buffer', cellDates: true, raw: true });
+  const profileWorkbook = /voix customer profile sheet/i.test(originalName);
   const sheets = [];
   for (const sheetName of workbook.SheetNames) {
-    const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-      header: 1,
-      defval: '',
-      raw: true,
-      blankrows: false
-    });
-    const parsed = buildSheetRows(matrix, file.originalname, sheetName === 'Sheet1' ? '' : sheetName);
-    if (parsed) sheets.push(parsed);
+    const worksheet = workbook.Sheets[sheetName];
+    if (profileWorkbook && sheetName === 'Customer Log') {
+      sheets.push(parseCustomerLogSheet(worksheet, originalName, sheetName));
+    } else if (profileWorkbook && /^\d{3}$/.test(sheetName)) {
+      sheets.push(parseProfileHistorySheet(worksheet, originalName, sheetName));
+    } else {
+      sheets.push(buildSheetRows(worksheetMatrix(worksheet), originalName, sheetName));
+    }
   }
   return sheets;
 }
@@ -287,7 +479,8 @@ function resolveCustomerId(name, ipAddress = '') {
   return exactName ? byName.get(exactName)?.id || null : null;
 }
 
-function upsertCustomerFromRow(row, { dateFormat = 'day-first' } = {}) {
+function upsertCustomerFromRow(row, options = {}) {
+  const dateFormat = options.dateFormat || 'day-first';
   const voixNoRaw = value(row, 'customer id', 'voix number', 'voix no', 'customer id number');
   const voixNo = cleanText(voixNoRaw) || null;
   const name = cleanText(value(row, 'name', 'customer name', 'enterprise name', 'client name')) || (voixNo ? `Subscriber ${voixNo}` : '');
@@ -296,7 +489,7 @@ function upsertCustomerFromRow(row, { dateFormat = 'day-first' } = {}) {
   const serviceTypeRaw = cleanText(value(row, 'customer type', 'service type', 'service plan', 'bandwidth', 'type', 'category'));
   const emailRaw = cleanText(value(row, 'email address', 'email', 'email address 1')).replace(/^mailto:/i, '');
   const phone = cleanText(value(row, 'phone number', 'customer number', 'phone'));
-  const address = cleanText(value(row, 'column 1', 'physical address', 'exact address', 'address', 'location'));
+  const address = cleanText(value(row, 'column 1', 'physical address', 'house name', 'house', 'unit', 'flat', 'exact address', 'address', 'location'));
   const paymentSchedule = cleanText(value(row, 'payment schedule', 'payment schedle', 'payment cycle'));
   const bankReceived = cleanText(value(row, 'bank received', 'bank', 'payment bank'));
   const ipAddress = cleanText(value(row, 'ip address', 'static ip'));
@@ -305,12 +498,19 @@ function upsertCustomerFromRow(row, { dateFormat = 'day-first' } = {}) {
     ? inferCustomerType(serviceTypeRaw, voixNo || '')
     : /(?:^|\s)vn-c-/.test(String(voixNo || '').toLowerCase()) ? 'Enterprise' : null;
   const plan = cleanText(value(row, 'bandwidth', 'plan', 'service plan', 'service type'));
-  const incomingStatus = normalizeStatus(value(row, 'subscription status', 'account status', 'status'), '');
+  const incomingStatus = normalizeStatus(value(row, 'subscription status', 'subcription status', 'account status', 'status'), '');
   const lastPaymentDate = toIsoDate(value(row, 'last payment date'), { dayFirst: dateFormat === 'day-first' });
   const nextDueDate = toIsoDate(value(row, 'next due date'), { dayFirst: dateFormat === 'day-first' });
   const amountPayable = parseAmount(value(row, 'amount payable', 'subscription amount', 'monthly fee'));
   const amountPaid = parseAmount(value(row, 'amount paid', 'subscription paid'));
-  const outstanding = parseAmount(value(row, 'outstanding balance', 'outstanding', 'balance due'));
+  const outstanding = parseAmount(value(row, 'outstanding balance', 'outsanding balance', 'outstanding', 'balance due'));
+  const lineName = cleanText(options.lineName || value(row, 'network line', 'line name', 'line', 'olt'))
+    || getLineCodeFromVoixNumber(voixNo);
+  const estateName = cleanText(options.estateName || row.__estateName || value(row, 'estate name', 'estate', 'subgroup'));
+  const estateCode = cleanText(options.estateCode) || getEstateCodeFromVoixNumber(voixNo);
+  const explicitHouse = cleanText(options.houseName || value(row, 'house name', 'house', 'unit', 'flat'));
+  const houseName = explicitHouse || (estateName ? address : '');
+  const groupId = ensureImportedCustomerGroup({ lineName, estateName, estateCode, houseName });
 
   const existing = (voixNo && db.prepare('SELECT * FROM customers WHERE lower(trim(voix_no)) = lower(trim(?))').get(voixNo))
     || db.prepare('SELECT * FROM customers WHERE lower(trim(name)) = lower(trim(?)) ORDER BY created_at ASC LIMIT 1').get(name);
@@ -328,6 +528,7 @@ function upsertCustomerFromRow(row, { dateFormat = 'day-first' } = {}) {
       ip_address: ipAddress || existing.ip_address || 'Unassigned',
       status: incomingStatus || existing.status || 'Active',
       payment_schedule: paymentSchedule || existing.payment_schedule,
+      group_id: groupId || existing.group_id || null,
       amount_payable: amountPayable === null ? existing.amount_payable : amountPayable,
       amount_paid: amountPaid === null ? existing.amount_paid : amountPaid,
       bank_received: bankReceived || existing.bank_received,
@@ -340,29 +541,29 @@ function upsertCustomerFromRow(row, { dateFormat = 'day-first' } = {}) {
         voix_no = @voix_no, name = @name, customer_type = @customer_type,
         email = @email, phone = @phone, address = @address, mac_address = @mac_address,
         service_plan = @service_plan, ip_address = @ip_address, status = @status,
-        payment_schedule = @payment_schedule, amount_payable = @amount_payable,
+        payment_schedule = @payment_schedule, group_id = @group_id, amount_payable = @amount_payable,
         amount_paid = @amount_paid, bank_received = @bank_received,
         last_payment_date = @last_payment_date, next_due_date = @next_due_date,
         outstanding_balance = @outstanding_balance
       WHERE id = @id
     `).run({ ...patch, id: existing.id });
-    return { id: existing.id, name, voixNo: patch.voix_no, customerType: patch.customer_type, created: false };
+    return { id: existing.id, name, voixNo: patch.voix_no, customerType: patch.customer_type, groupId: patch.group_id, created: false };
   }
 
   const id = generateId('customer', 'CUST');
   db.prepare(`
     INSERT INTO customers (
       id, voix_no, name, customer_type, email, phone, address, mac_address,
-      service_plan, ip_address, status, payment_schedule, amount_payable,
+      service_plan, ip_address, status, payment_schedule, group_id, amount_payable,
       amount_paid, bank_received, last_payment_date, next_due_date, outstanding_balance
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, voixNo, name, customerType || 'FTTH', emailRaw, phone, address, macAddress,
     plan, ipAddress || 'Unassigned', incomingStatus || 'Active', paymentSchedule,
-    amountPayable ?? 0, amountPaid ?? 0, bankReceived, lastPaymentDate, nextDueDate,
+    groupId, amountPayable ?? 0, amountPaid ?? 0, bankReceived, lastPaymentDate, nextDueDate,
     outstanding ?? 0
   );
-  return { id, name, voixNo, customerType: customerType || 'FTTH', created: true };
+  return { id, name, voixNo, customerType: customerType || 'FTTH', groupId, created: true };
 }
 
 function safeInvoicePart(value) {
@@ -451,22 +652,187 @@ function importCustomers(sheet) {
   let updated = 0;
   let skipped = 0;
   let paymentsImported = 0;
+  let groupedCustomers = 0;
   const headers = Object.keys(sheet.rows[0] || {}).filter((header) => !header.startsWith('__'));
+  const sheetName = String(sheet.sheetName || '').trim();
+  const sheetEstate = /^(?:sheet\d*|customer log|blank|sales sheet|daily schedule)$/i.test(sheetName) ? '' : sheetName;
 
   const run = db.transaction(() => {
     for (const row of sheet.rows) {
-      const customer = upsertCustomerFromRow(row, { dateFormat: 'day-first' });
+      const estateName = cleanText(row.__estateName || value(row, 'estate name', 'estate', 'subgroup') || sheetEstate);
+      const customer = upsertCustomerFromRow(row, { dateFormat: 'day-first', estateName });
       if (!customer) {
         skipped += 1;
         continue;
       }
       if (customer.created) created += 1;
       else updated += 1;
+      if (customer.groupId) groupedCustomers += 1;
       paymentsImported += importMonthlyPaymentHistory(row, headers, customer);
     }
   });
   run();
-  return { source: sheet.source, type: 'Customer accounts', customersCreated: created, customersUpdated: updated, paymentEntriesImported: paymentsImported, rowsSkipped: skipped };
+  return {
+    source: sheet.source,
+    type: 'Customer accounts',
+    customersCreated: created,
+    customersUpdated: updated,
+    customersGrouped: groupedCustomers,
+    paymentEntriesImported: paymentsImported,
+    rowsSkipped: skipped
+  };
+}
+
+function findOrCreateProfileCustomer(metadata) {
+  const voixNo = cleanText(metadata?.voixNo);
+  if (voixNo) {
+    const existing = db.prepare('SELECT id FROM customers WHERE lower(trim(voix_no)) = lower(trim(?))').get(voixNo);
+    if (existing) return existing.id;
+  }
+  const name = cleanText(metadata?.name);
+  if (name) {
+    const existing = db.prepare('SELECT id FROM customers WHERE lower(trim(name)) = lower(trim(?)) ORDER BY created_at ASC LIMIT 1').get(name);
+    if (existing) return existing.id;
+  }
+  if (!name && !voixNo) return null;
+
+  const row = {
+    name,
+    'voix number': voixNo,
+    'phone number': metadata?.phone || '',
+    'physical address': metadata?.address || '',
+    'email address': metadata?.email || '',
+    'mac address': metadata?.macAddress || '',
+    'account status': metadata?.status || ''
+  };
+  const created = upsertCustomerFromRow(row, { dateFormat: 'day-first', houseName: cleanText(metadata?.address) });
+  return created?.id || null;
+}
+
+function importProfileHistory(sheet) {
+  let paymentRowsImported = 0;
+  let supportRowsImported = 0;
+  let unlinkedProfiles = 0;
+  let profileTabsImported = 0;
+  const errors = [];
+  const records = sheet.rows || [];
+  for (const row of records) {
+    try {
+      const tabResult = db.transaction(() => {
+        let tabPaymentRowsImported = 0;
+        let tabSupportRowsImported = 0;
+        let tabUnlinkedProfiles = 0;
+        const metadata = row.metadata || {};
+        const customerId = findOrCreateProfileCustomer(metadata);
+        if (!customerId) tabUnlinkedProfiles += 1;
+        const voixNo = cleanText(metadata.voixNo) || null;
+        const sourceSheet = row.sourceSheet || sheet.sheetName;
+
+      for (const payment of row.payments || []) {
+        const rawData = {
+          datePaid: payment.datePaidRaw,
+          amount: payment.amountRaw,
+          method: payment.paymentMethod,
+          reference: payment.referenceNo,
+          expiry: payment.expiryDateRaw,
+          cells: payment.rawCells
+        };
+        const result = db.prepare(`
+          INSERT INTO legacy_customer_payments (
+            archive_id, source_name, source_sheet, source_row_number, customer_id, voix_no,
+            date_paid, date_paid_raw, amount, amount_raw, payment_method, reference_no,
+            expiry_date, expiry_date_raw, raw_data_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(source_name, source_sheet, source_row_number) DO UPDATE SET
+            archive_id = excluded.archive_id, customer_id = excluded.customer_id,
+            voix_no = excluded.voix_no, date_paid = excluded.date_paid,
+            date_paid_raw = excluded.date_paid_raw, amount = excluded.amount,
+            amount_raw = excluded.amount_raw, payment_method = excluded.payment_method,
+            reference_no = excluded.reference_no, expiry_date = excluded.expiry_date,
+            expiry_date_raw = excluded.expiry_date_raw, raw_data_json = excluded.raw_data_json
+        `).run(
+          sheet.archiveId,
+          sheet.originalName || sheet.source.split(' · ')[0],
+          sourceSheet,
+          payment.sourceRowNumber,
+          customerId,
+          voixNo,
+          toIsoDate(payment.datePaidRaw, { dayFirst: false }),
+          cleanText(payment.datePaidRaw),
+          parseAmount(payment.amountRaw),
+          cleanText(payment.amountRaw),
+          cleanText(payment.paymentMethod),
+          cleanText(payment.referenceNo),
+          toIsoDate(payment.expiryDateRaw, { dayFirst: false }),
+          cleanText(payment.expiryDateRaw),
+          JSON.stringify(rawData)
+        );
+        tabPaymentRowsImported += result.changes;
+      }
+
+      for (const event of row.support || []) {
+        const rawData = {
+          date: event.eventDateRaw,
+          time: event.eventTime,
+          loggedBy: event.loggedBy,
+          issueCategory: event.issueCategory,
+          details: event.details,
+          actionTaken: event.actionTaken,
+          status: event.status,
+          cells: event.rawCells
+        };
+        const result = db.prepare(`
+          INSERT INTO legacy_customer_support_history (
+            archive_id, source_name, source_sheet, source_row_number, customer_id, voix_no,
+            event_date, event_date_raw, event_time, logged_by, issue_category, details,
+            action_taken, status, raw_data_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(source_name, source_sheet, source_row_number) DO UPDATE SET
+            archive_id = excluded.archive_id, customer_id = excluded.customer_id,
+            voix_no = excluded.voix_no, event_date = excluded.event_date,
+            event_date_raw = excluded.event_date_raw, event_time = excluded.event_time,
+            logged_by = excluded.logged_by, issue_category = excluded.issue_category,
+            details = excluded.details, action_taken = excluded.action_taken,
+            status = excluded.status, raw_data_json = excluded.raw_data_json
+        `).run(
+          sheet.archiveId,
+          sheet.originalName || sheet.source.split(' · ')[0],
+          sourceSheet,
+          event.sourceRowNumber,
+          customerId,
+          voixNo,
+          toIsoDate(event.eventDateRaw, { dayFirst: false }),
+          cleanText(event.eventDateRaw),
+          cleanText(event.eventTime),
+          cleanText(event.loggedBy),
+          cleanText(event.issueCategory),
+          cleanText(event.details),
+          cleanText(event.actionTaken),
+          cleanText(event.status),
+          JSON.stringify(rawData)
+        );
+        tabSupportRowsImported += result.changes;
+      }
+      return { tabPaymentRowsImported, tabSupportRowsImported, tabUnlinkedProfiles };
+    })();
+    paymentRowsImported += tabResult.tabPaymentRowsImported;
+    supportRowsImported += tabResult.tabSupportRowsImported;
+    unlinkedProfiles += tabResult.tabUnlinkedProfiles;
+    profileTabsImported += 1;
+    } catch (error) {
+      errors.push({ sourceSheet: row.sourceSheet || '', message: error.message });
+    }
+  }
+  return {
+    source: sheet.source,
+    type: 'Customer profile history',
+    profileTabsImported,
+    profileTabsFailed: errors.length,
+    paymentRowsImported,
+    supportRowsImported,
+    unlinkedProfiles,
+    ...(errors.length ? { message: `${errors.length} profile tab(s) could not be mapped: ${errors.map((item) => `${item.sourceSheet || 'unknown sheet'} — ${item.message}`).join('; ')}` } : {})
+  };
 }
 
 function normalizeTicketStatus(value) {
@@ -506,6 +872,15 @@ function importQueries(sheet) {
         row,
         'issue description customer s words or error message', 'issue description', 'issue', 'description'
       ));
+      const rawLocation = cleanText(value(row, 'location', 'estate', 'estate name', 'house', 'house name', 'address'));
+      const namedScopeGroup = isMainNetworkLabel(customerNameRaw)
+        ? getOrCreateCustomerGroup('Main 1', 'network')
+        : findCustomerGroupByName(customerNameRaw);
+      const locationScopeGroup = isMainNetworkLabel(rawLocation)
+        ? getOrCreateCustomerGroup('Main 1', 'network')
+        : findCustomerGroupByName(rawLocation);
+      const scopeGroupIds = [...new Set([namedScopeGroup?.id, locationScopeGroup?.id].filter(Boolean))];
+      const scopeGroupId = scopeGroupIds[0] || null;
       const dateReceived = toIsoDate(value(row, 'date received'), { dayFirst: false });
       const resolutionRaw = cleanText(value(row, 'resolution date time'));
       const resolutionDate = toIsoDate(resolutionRaw, { dayFirst: false });
@@ -516,7 +891,8 @@ function importQueries(sheet) {
       const record = {
         external_ref: externalRef,
         customer_id: customerId || null,
-        customer_name: customerNameRaw || matchedCustomer?.name || 'Unlinked legacy query',
+        scope_group_id: scopeGroupId,
+        customer_name: customerNameRaw || matchedCustomer?.name || (scopeGroupId ? rawLocation : 'Unlinked legacy query'),
         title: queryType,
         description: issue || queryType,
         category: queryType,
@@ -526,7 +902,7 @@ function importQueries(sheet) {
         time_received: cleanText(value(row, 'time received')),
         customer_ip: customerIp,
         query_type: queryType,
-        location: cleanText(value(row, 'location')),
+        location: rawLocation,
         service_type: cleanText(value(row, 'service type')),
         opened_by: cleanText(value(row, 'ticket opened by', 'opened by')),
         whatsapp_sos_sent: /^(y|yes|true|1)$/i.test(cleanText(value(row, 'whatsapp sos sent y n', 'whatsapp sos sent'))) ? 1 : 0,
@@ -540,39 +916,44 @@ function importQueries(sheet) {
       };
 
       const existing = db.prepare('SELECT id FROM tickets WHERE external_ref = ?').get(externalRef);
+      let ticketId = existing?.id || null;
       if (existing) {
         db.prepare(`
-          UPDATE tickets SET customer_id = @customer_id, customer_name = @customer_name,
-            title = @title, description = @description, category = @category,
-            priority = @priority, status = @status, date_received = @date_received,
-            time_received = @time_received, customer_ip = @customer_ip,
-            query_type = @query_type, location = @location, service_type = @service_type,
-            opened_by = @opened_by, whatsapp_sos_sent = @whatsapp_sos_sent,
-            assigned_to = @assigned_to, resolution_datetime = @resolution_datetime,
-            mttr = @mttr, resolution_by = @resolution_by,
-            customer_feedback = @customer_feedback, closure_notes = @closure_notes,
-            ticket_closed_by = @ticket_closed_by
+          UPDATE tickets SET customer_id = @customer_id, scope_group_id = @scope_group_id,
+            customer_name = @customer_name, title = @title, description = @description,
+            category = @category, priority = @priority, status = @status,
+            date_received = @date_received, time_received = @time_received,
+            customer_ip = @customer_ip, query_type = @query_type, location = @location,
+            service_type = @service_type, opened_by = @opened_by,
+            whatsapp_sos_sent = @whatsapp_sos_sent, assigned_to = @assigned_to,
+            resolution_datetime = @resolution_datetime, mttr = @mttr,
+            resolution_by = @resolution_by, customer_feedback = @customer_feedback,
+            closure_notes = @closure_notes, ticket_closed_by = @ticket_closed_by
           WHERE id = @id
-        `).run({ ...record, id: existing.id });
+        `).run({ ...record, id: ticketId });
         updated += 1;
       } else {
+        ticketId = generateId('ticket', 'TKT');
         db.prepare(`
           INSERT INTO tickets (
-            id, external_ref, customer_id, customer_name, title, description, category,
-            priority, status, date_received, time_received, customer_ip, query_type,
-            location, service_type, opened_by, whatsapp_sos_sent, assigned_to,
-            resolution_datetime, mttr, resolution_by, customer_feedback, closure_notes,
-            ticket_closed_by
+            id, external_ref, customer_id, scope_group_id, customer_name, title,
+            description, category, priority, status, date_received, time_received,
+            customer_ip, query_type, location, service_type, opened_by,
+            whatsapp_sos_sent, assigned_to, resolution_datetime, mttr, resolution_by,
+            customer_feedback, closure_notes, ticket_closed_by
           ) VALUES (
-            @id, @external_ref, @customer_id, @customer_name, @title, @description,
-            @category, @priority, @status, @date_received, @time_received, @customer_ip,
-            @query_type, @location, @service_type, @opened_by, @whatsapp_sos_sent,
-            @assigned_to, @resolution_datetime, @mttr, @resolution_by,
-            @customer_feedback, @closure_notes, @ticket_closed_by
+            @id, @external_ref, @customer_id, @scope_group_id, @customer_name, @title,
+            @description, @category, @priority, @status, @date_received, @time_received,
+            @customer_ip, @query_type, @location, @service_type, @opened_by,
+            @whatsapp_sos_sent, @assigned_to, @resolution_datetime, @mttr,
+            @resolution_by, @customer_feedback, @closure_notes, @ticket_closed_by
           )
-        `).run({ ...record, id: generateId('ticket', 'TKT') });
+        `).run({ ...record, id: ticketId });
         created += 1;
       }
+      db.prepare('DELETE FROM ticket_customer_links WHERE ticket_id = ?').run(ticketId);
+      db.prepare('DELETE FROM ticket_scope_groups WHERE ticket_id = ?').run(ticketId);
+      linkTicketToScope(ticketId, { customerId: customerId || null, groupIds: scopeGroupIds });
     }
   });
   upsert();
@@ -935,33 +1316,153 @@ function importIncome(sheet) {
   return { source: sheet.source, type: 'Income day book', ledgerEntriesImported: imported, rowsSkipped: skipped };
 }
 
-const importOrder = { customers: 0, income: 1, deployments: 2, queries: 3, daybook: 4 };
+const importOrder = { customers: 0, income: 1, deployments: 2, queries: 3, daybook: 4, profile_history: 5, raw: 6 };
+
+function archiveUploadedFile(file) {
+  const buffer = Buffer.isBuffer(file.buffer) ? file.buffer : Buffer.from(file.buffer || '');
+  const sha256 = createHash('sha256').update(buffer).digest('hex');
+  db.prepare(`
+    INSERT INTO import_archives (original_name, sha256, mime_type, file_data)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(sha256) DO UPDATE SET
+      original_name = excluded.original_name,
+      mime_type = excluded.mime_type,
+      last_imported_at = CURRENT_TIMESTAMP
+  `).run(
+    String(file.originalname || 'Uploaded spreadsheet'),
+    sha256,
+    file.mimetype || null,
+    buffer
+  );
+  const archive = db.prepare('SELECT id FROM import_archives WHERE sha256 = ?').get(sha256);
+  return { id: archive.id, sha256, bytes: buffer.length };
+}
+
+function persistRawSourceRows(archiveId, sheets) {
+  const insert = db.prepare(`
+    INSERT INTO legacy_import_rows (
+      archive_id, sheet_name, source_row_number, record_kind, row_data_json
+    ) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(archive_id, sheet_name, source_row_number) DO UPDATE SET
+      record_kind = excluded.record_kind,
+      row_data_json = excluded.row_data_json
+    WHERE legacy_import_rows.record_kind IS NOT excluded.record_kind
+      OR legacy_import_rows.row_data_json IS NOT excluded.row_data_json
+  `);
+  let sourceRowsPreserved = 0;
+  let rowsChanged = 0;
+  const saveRows = db.transaction(() => {
+    for (const sheet of sheets) {
+      sheet.archiveId = archiveId;
+      for (const row of sheet.archiveRows || []) {
+        sourceRowsPreserved += 1;
+        const rowData = JSON.stringify({
+          headers: row.headers || null,
+          cells: row.cells
+        });
+        rowsChanged += insert.run(
+          archiveId,
+          String(sheet.sheetName || 'Sheet1'),
+          Number(row.rowNumber) || 0,
+          sheet.kind || 'raw',
+          rowData
+        ).changes;
+      }
+    }
+  });
+  saveRows();
+  return { sourceRowsPreserved, rowsChanged };
+}
 
 export function importLegacyFiles(files) {
   const parsedSheets = [];
   const summaries = [];
 
   for (const file of files) {
+    const originalName = String(file.originalname || 'Uploaded spreadsheet');
+    let archive;
     try {
-      const sheets = readMigrationFile(file);
-      if (sheets.length === 0) {
-        summaries.push({ source: file.originalname, type: 'Not recognized', rowsSkipped: 0, message: 'No supported data table was found in this file.' });
-        continue;
-      }
-      parsedSheets.push(...sheets);
+      archive = archiveUploadedFile(file);
     } catch (error) {
-      summaries.push({ source: file.originalname, type: 'Import error', message: error.message });
+      summaries.push({ source: originalName, type: 'Import error', message: `The original file could not be archived: ${error.message}` });
+      continue;
     }
+
+    let sheets = [];
+    let parseError = null;
+    try {
+      sheets = readMigrationFile(file);
+      for (const sheet of sheets) sheet.originalName = originalName;
+    } catch (error) {
+      parseError = error;
+    }
+
+    let rawSummary = { sourceRowsPreserved: 0, rowsChanged: 0 };
+    try {
+      rawSummary = persistRawSourceRows(archive.id, sheets);
+    } catch (error) {
+      summaries.push({
+        source: originalName,
+        type: 'Import error',
+        archiveId: archive.id,
+        fileSha256: archive.sha256,
+        message: `The source file was archived, but its rows could not be indexed: ${error.message}`
+      });
+    }
+    summaries.push({
+      source: `Archived original · ${originalName}`,
+      originalName,
+      type: 'Original file archived',
+      archiveId: archive.id,
+      fileSha256: archive.sha256,
+      fileBytes: archive.bytes,
+      sheetsArchived: sheets.length,
+      sourceRowsPreserved: rawSummary.sourceRowsPreserved,
+      sourceRowsAddedOrUpdated: rawSummary.rowsChanged
+    });
+
+    if (parseError) {
+      summaries.push({ source: originalName, type: 'Import error', message: parseError.message });
+      continue;
+    }
+    if (sheets.length === 0) {
+      summaries.push({ source: originalName, type: 'Not recognized', rowsSkipped: 0, message: 'The file is retained unchanged, but no readable spreadsheet tables were found.' });
+      continue;
+    }
+    if (!sheets.some((sheet) => sheet.kind !== 'raw')) {
+      summaries.push({ source: originalName, type: 'Not recognized', rowsSkipped: 0, message: 'The file is retained unchanged; none of its sheets matched a mapped ERP record type.' });
+    }
+    parsedSheets.push(...sheets);
   }
 
-  parsedSheets.sort((a, b) => importOrder[a.kind] - importOrder[b.kind]);
+  const sheetsToImport = [];
+  const profileBatches = new Map();
   for (const sheet of parsedSheets) {
+    if (sheet.kind !== 'profile_history') {
+      sheetsToImport.push(sheet);
+      continue;
+    }
+    const batchKey = `${sheet.archiveId || ''}:${sheet.originalName || sheet.source}`;
+    if (!profileBatches.has(batchKey)) {
+      profileBatches.set(batchKey, {
+        ...sheet,
+        source: sheet.originalName || sheet.source.split(' · ')[0],
+        sheetName: 'profile tabs',
+        rows: []
+      });
+    }
+    profileBatches.get(batchKey).rows.push(...sheet.rows);
+  }
+  sheetsToImport.push(...profileBatches.values());
+  sheetsToImport.sort((a, b) => (importOrder[a.kind] ?? 99) - (importOrder[b.kind] ?? 99));
+  for (const sheet of sheetsToImport) {
     try {
       if (sheet.kind === 'customers') summaries.push(importCustomers(sheet));
       else if (sheet.kind === 'income') summaries.push(importIncome(sheet));
       else if (sheet.kind === 'deployments') summaries.push(importDeployments(sheet));
       else if (sheet.kind === 'queries') summaries.push(importQueries(sheet));
       else if (sheet.kind === 'daybook') summaries.push(importDaybook(sheet));
+      else if (sheet.kind === 'profile_history') summaries.push(importProfileHistory(sheet));
     } catch (error) {
       summaries.push({ source: sheet.source, type: 'Import error', message: error.message });
     }
@@ -969,7 +1470,7 @@ export function importLegacyFiles(files) {
 
   const totals = summaries.reduce((result, summary) => {
     for (const [key, amount] of Object.entries(summary)) {
-      if (key.endsWith('Imported') || key.endsWith('Created') || key.endsWith('Updated') || key === 'rowsSkipped') {
+      if (key.endsWith('Imported') || key.endsWith('Created') || key.endsWith('Updated') || key === 'rowsSkipped' || key === 'sourceRowsPreserved') {
         result[key] = (result[key] || 0) + (Number(amount) || 0);
       }
     }

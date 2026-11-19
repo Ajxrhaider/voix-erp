@@ -5,6 +5,13 @@ import db, { generateId } from '../db.js';
 import { authenticateToken, requireRoles } from './auth.js';
 import { getPaymentReminderDays, notifyPaymentReceived, syncUpcomingPaymentNotifications } from '../services/paymentReminders.js';
 import { importLegacyFiles } from '../utils/dataMigration.js';
+import {
+  CUSTOMER_GROUP_TYPES,
+  getCustomerGroupPath,
+  isValidGroupParent,
+  listCustomerGroups,
+  getOrCreateCustomerGroup
+} from '../services/customerGroups.js';
 
 const router = express.Router();
 const allowedImportExtensions = new Set(['.csv', '.xlsx', '.xls', '.html', '.htm']);
@@ -63,9 +70,107 @@ function emitChange(req) {
   req.io?.emit('erp-data-changed');
 }
 
-// Get all customer accounts for CRM and customer-service pickers.
+// Get all customer accounts and their location-group breadcrumb.
 router.get('/', authenticateToken, (_req, res) => {
-  res.json(db.prepare('SELECT * FROM customers ORDER BY name COLLATE NOCASE ASC').all());
+  const customers = db.prepare('SELECT * FROM customers ORDER BY name COLLATE NOCASE ASC').all();
+  res.json(customers.map((customer) => ({ ...customer, group_path: getCustomerGroupPath(customer.group_id) })));
+});
+
+router.get('/customer-groups', authenticateToken, (_req, res) => {
+  res.json(listCustomerGroups());
+});
+
+router.get('/import-archives', authenticateToken, (_req, res) => {
+  const archives = db.prepare(`
+    SELECT archives.id, archives.original_name, archives.sha256, archives.mime_type,
+      length(archives.file_data) AS file_bytes, archives.created_at, archives.last_imported_at,
+      (SELECT count(*) FROM legacy_import_rows WHERE archive_id = archives.id) AS source_rows,
+      (SELECT count(DISTINCT sheet_name) FROM legacy_import_rows WHERE archive_id = archives.id) AS sheet_count
+    FROM import_archives AS archives
+    ORDER BY archives.last_imported_at DESC, archives.id DESC
+  `).all();
+  res.json(archives);
+});
+
+router.get('/import-archives/:id/download', authenticateToken, (req, res) => {
+  const archive = db.prepare('SELECT original_name, mime_type, file_data FROM import_archives WHERE id = ?').get(req.params.id);
+  if (!archive) return res.status(404).json({ message: 'Archived import file not found.' });
+  const safeName = String(archive.original_name || 'source-file').replace(/[\\"\r\n]/g, '_');
+  res.setHeader('Content-Type', archive.mime_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+  res.send(archive.file_data);
+});
+
+router.post('/customer-groups', authenticateToken, requireRoles(['Customer Service', 'NOC', 'Accounting', 'Admin', 'Management', 'GM', 'Dev']), (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const groupType = String(req.body.group_type || '').trim().toLowerCase();
+  const parentId = String(req.body.parent_id || '').trim() || null;
+  if (!name) return res.status(400).json({ message: 'Enter a name for the customer group.' });
+  if (!CUSTOMER_GROUP_TYPES.includes(groupType)) return res.status(400).json({ message: 'Choose Network, Line, Estate, or House as the group type.' });
+
+  const parent = parentId ? db.prepare('SELECT id, group_type FROM customer_groups WHERE id = ?').get(parentId) : null;
+  if (parentId && !parent) return res.status(400).json({ message: 'The selected parent group was not found.' });
+  if (!isValidGroupParent(groupType, parent?.group_type || null)) {
+    return res.status(400).json({ message: 'Groups must follow Network → Line → Estate → House (an Estate may be directly under a Network).'});
+  }
+
+  try {
+    const id = getOrCreateCustomerGroup(name, groupType, parentId);
+    emitChange(req);
+    return res.status(201).json({ id, message: 'Customer group saved.' });
+  } catch (error) {
+    if (error.code?.startsWith('SQLITE_CONSTRAINT')) return res.status(409).json({ message: 'A group with that name already exists under this parent.' });
+    throw error;
+  }
+});
+
+router.patch('/customer-groups/:id', authenticateToken, requireRoles(['Customer Service', 'NOC', 'Accounting', 'Admin', 'Management', 'GM', 'Dev']), (req, res) => {
+  const group = db.prepare('SELECT * FROM customer_groups WHERE id = ?').get(req.params.id);
+  if (!group) return res.status(404).json({ message: 'Customer group not found.' });
+  const name = String(req.body.name ?? group.name).trim();
+  const groupType = String(req.body.group_type ?? group.group_type).trim().toLowerCase();
+  const parentId = req.body.parent_id === undefined
+    ? group.parent_id
+    : String(req.body.parent_id || '').trim() || null;
+  if (!name) return res.status(400).json({ message: 'Enter a name for the customer group.' });
+  if (!CUSTOMER_GROUP_TYPES.includes(groupType)) return res.status(400).json({ message: 'Choose Network, Line, Estate, or House as the group type.' });
+
+  let ancestorId = parentId;
+  while (ancestorId) {
+    if (ancestorId === group.id) return res.status(400).json({ message: 'A group cannot be moved under itself or one of its descendants.' });
+    ancestorId = db.prepare('SELECT parent_id FROM customer_groups WHERE id = ?').get(ancestorId)?.parent_id || null;
+  }
+  const parent = parentId ? db.prepare('SELECT id, group_type FROM customer_groups WHERE id = ?').get(parentId) : null;
+  if (parentId && !parent) return res.status(400).json({ message: 'The selected parent group was not found.' });
+  if (!isValidGroupParent(groupType, parent?.group_type || null)) {
+    return res.status(400).json({ message: 'Groups must follow Network → Line → Estate → House (an Estate may be directly under a Network).'});
+  }
+  const hasChildren = Boolean(db.prepare('SELECT id FROM customer_groups WHERE parent_id = ? LIMIT 1').get(group.id));
+  if (hasChildren && groupType !== group.group_type) {
+    return res.status(409).json({ message: 'Change or move this group’s children before changing its type.' });
+  }
+
+  try {
+    db.prepare('UPDATE customer_groups SET name = ?, group_type = ?, parent_id = ? WHERE id = ?')
+      .run(name, groupType, parentId, group.id);
+  } catch (error) {
+    if (error.code?.startsWith('SQLITE_CONSTRAINT')) return res.status(409).json({ message: 'A group with that name already exists under this parent.' });
+    throw error;
+  }
+  emitChange(req);
+  res.json({ message: 'Customer group updated.' });
+});
+
+router.patch('/:id/group', authenticateToken, requireRoles(['Customer Service', 'NOC', 'Accounting', 'Admin', 'Management', 'GM', 'Dev']), (req, res) => {
+  const customer = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!customer) return res.status(404).json({ message: 'Customer not found.' });
+  const groupId = String(req.body.group_id || '').trim() || null;
+  if (groupId && !db.prepare('SELECT id FROM customer_groups WHERE id = ?').get(groupId)) {
+    return res.status(400).json({ message: 'The selected customer group was not found.' });
+  }
+  db.prepare('UPDATE customers SET group_id = ? WHERE id = ?').run(groupId, customer.id);
+  emitChange(req);
+  res.json({ message: 'Customer location group updated.', group_id: groupId });
 });
 
 // Due and overdue accounts for a dashboard reminder list.
@@ -97,14 +202,25 @@ router.get('/payment-due', authenticateToken, (req, res) => {
 router.get('/:id/profile', authenticateToken, (req, res) => {
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
   if (!customer) return res.status(404).json({ message: 'Customer not found' });
+  customer.group_path = getCustomerGroupPath(customer.group_id);
 
   const queries = db.prepare(`
-    SELECT * FROM tickets
-    WHERE customer_id = ?
-      OR lower(trim(customer_name)) = lower(trim(?))
-      OR (customer_ip IS NOT NULL AND trim(customer_ip) <> '' AND trim(customer_ip) = trim(?))
-    ORDER BY coalesce(date_received, substr(created_at, 1, 10)) DESC, created_at DESC, id DESC
-  `).all(customer.id, customer.name, customer.ip_address || '');
+    SELECT DISTINCT tickets.*
+    FROM tickets
+    LEFT JOIN ticket_customer_links AS ticket_links ON ticket_links.ticket_id = tickets.id
+    WHERE tickets.customer_id = ?
+      OR ticket_links.customer_id = ?
+      OR lower(trim(tickets.customer_name)) = lower(trim(?))
+      OR (tickets.customer_ip IS NOT NULL AND trim(tickets.customer_ip) <> '' AND trim(tickets.customer_ip) = trim(?))
+    ORDER BY coalesce(tickets.date_received, substr(tickets.created_at, 1, 10)) DESC, tickets.created_at DESC, tickets.id DESC
+  `).all(customer.id, customer.id, customer.name, customer.ip_address || '')
+    .map((ticket) => {
+      const groupIds = db.prepare('SELECT group_id FROM ticket_scope_groups WHERE ticket_id = ? ORDER BY created_at, group_id')
+        .all(ticket.id).map((row) => row.group_id);
+      const effectiveGroupIds = groupIds.length ? groupIds : (ticket.scope_group_id ? [ticket.scope_group_id] : []);
+      const groupPaths = effectiveGroupIds.map((groupId) => getCustomerGroupPath(groupId)).filter(Boolean);
+      return { ...ticket, scope_group_ids: effectiveGroupIds, scope_group_paths: groupPaths, scope_group_path: groupPaths.join('; ') };
+    });
 
   const payments = db.prepare(`
     SELECT * FROM accounting_ledger
@@ -122,20 +238,35 @@ router.get('/:id/profile', authenticateToken, (req, res) => {
     ORDER BY coalesce(start_date, created_at) DESC, created_at DESC
   `).all(customer.id, customer.name);
 
-  res.json({ customer, queries, payments, deployments });
+  const legacyPayments = db.prepare(`
+    SELECT * FROM legacy_customer_payments
+    WHERE customer_id = ?
+    ORDER BY coalesce(date_paid, date(date_paid_raw)) DESC, id DESC
+  `).all(customer.id);
+  const legacySupport = db.prepare(`
+    SELECT * FROM legacy_customer_support_history
+    WHERE customer_id = ?
+    ORDER BY coalesce(event_date, date(event_date_raw)) DESC, event_time DESC, id DESC
+  `).all(customer.id);
+
+  res.json({ customer, queries, payments, deployments, legacy_payments: legacyPayments, legacy_support: legacySupport });
 });
 
 // Create a new customer profile manually.
 router.post('/', authenticateToken, requireRoles(['Customer Service', 'Accounting', 'Admin', 'Management', 'GM', 'Dev']), (req, res) => {
   const {
     voix_no, name, mac_address, customer_type, service_plan, ip_address,
-    payment_schedule, amount_payable, amount_paid, bank_received,
+    payment_schedule, group_id, amount_payable, amount_paid, bank_received,
     last_payment_date, next_due_date, outstanding_balance, address, email,
     phone, status
   } = req.body;
 
   const cleanName = String(name || '').trim();
   if (!cleanName) return res.status(400).json({ message: 'Customer name is required.' });
+  const customerGroupId = String(group_id || '').trim() || null;
+  if (customerGroupId && !db.prepare('SELECT id FROM customer_groups WHERE id = ?').get(customerGroupId)) {
+    return res.status(400).json({ message: 'The selected customer group was not found.' });
+  }
 
   const customerId = generateId('customer', 'CUST');
   const voixNo = String(voix_no || '').trim() || `VX-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -143,10 +274,10 @@ router.post('/', authenticateToken, requireRoles(['Customer Service', 'Accountin
     db.prepare(`
       INSERT INTO customers (
         id, voix_no, name, mac_address, customer_type, service_plan, ip_address,
-        payment_schedule, amount_payable, amount_paid, bank_received,
+        payment_schedule, group_id, amount_payable, amount_paid, bank_received,
         last_payment_date, next_due_date, outstanding_balance, address, email,
         phone, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       voixNo,
@@ -156,6 +287,7 @@ router.post('/', authenticateToken, requireRoles(['Customer Service', 'Accountin
       String(service_plan || '').trim(),
       String(ip_address || '').trim() || 'Unassigned',
       payment_schedule || 'Monthly',
+      customerGroupId,
       numericValue(amount_payable),
       numericValue(amount_paid),
       String(bank_received || '').trim(),

@@ -1,8 +1,14 @@
 import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { AppContext } from '../context/AppContext';
 import ModuleLayout from '../components/layout/ModuleLayout';
+import CustomerGroupScopeSelect from '../components/CRM/CustomerGroupScopeSelect';
 import { canEscalateTicket } from '../utils/ticketFilters.js';
 import { Headset, Plus, AlertTriangle, FileText, Printer, Trash2, CreditCard } from 'lucide-react';
+
+const blankTicketForm = () => ({
+  date_received: new Date().toISOString().split('T')[0], time_received: '', customer_ip: '', customer_name: '', query_type: '',
+  location: '', service_type: 'FTTH', description: '', whatsapp_sos_sent: false, assigned_to: '', priority: 'Medium', scope_group_ids: []
+});
 
 export default function CustomerService() {
   const { tickets, customers, authFetch, refreshSystemData, hasRole, user } = useContext(AppContext);
@@ -14,10 +20,7 @@ export default function CustomerService() {
   const [viewingReport, setViewingReport] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   
-  const [formData, setFormData] = useState({
-    date_received: new Date().toISOString().split('T')[0], time_received: '', customer_ip: '', customer_name: '', query_type: '',
-    location: '', service_type: 'FTTH', description: '', whatsapp_sos_sent: false, assigned_to: '', priority: 'Medium'
-  });
+  const [formData, setFormData] = useState(blankTicketForm);
 
   const [paymentData, setPaymentData] = useState({
     customer_id: '', customer_name: '', date: new Date().toISOString().split('T')[0], amount: '', 
@@ -69,6 +72,7 @@ export default function CustomerService() {
       const response = await authFetch('/api/tickets', { method: 'POST', body: JSON.stringify(formData) });
       await readResponse(response, 'The customer query could not be created.');
       setIsModalOpen(false);
+      setFormData(blankTicketForm());
       await refreshSystemData();
     } catch (error) {
       setErrorMessage(error.message || 'The customer query could not be created.');
@@ -226,7 +230,7 @@ export default function CustomerService() {
         activeTab === 'queries' && hasRole(['NOC', 'Customer Service', 'Management', 'Dev']) && (
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <button onClick={() => setIsPaymentModalOpen(true)} className="bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><CreditCard className="w-4 h-4"/> Record Subscription Payment</button>
-            <button onClick={() => setIsModalOpen(true)} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><Plus className="w-4 h-4"/> Log New Query</button>
+            <button onClick={() => { setFormData(blankTicketForm()); setIsModalOpen(true); }} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2.5 sm:py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm transition"><Plus className="w-4 h-4"/> Log New Query</button>
           </div>
         )
       }
@@ -246,6 +250,7 @@ export default function CustomerService() {
                 <p className="text-sm text-slate-700">{t.description}</p>
                 <div className="text-[11px] sm:text-xs text-slate-600 mt-3 bg-slate-50 p-2 rounded-lg border border-slate-100 flex flex-wrap gap-x-4 gap-y-1">
                   <span className="font-medium"><strong className="text-slate-800">Loc:</strong> {t.location}</span>
+                  {t.scope_group_path && <span className="font-medium text-violet-800"><strong>Impact:</strong> {t.scope_group_path} · {t.affected_customer_count || 0} customer(s)</span>}
                   <span className="font-medium"><strong className="text-slate-800">IP:</strong> <span className="font-mono">{t.customer_ip}</span></span>
                   {t.priority === 'High' && <span className="font-bold text-red-700">URGENT PRIORITY</span>}
                 </div>
@@ -501,6 +506,7 @@ export default function CustomerService() {
               <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Query Type</label><input type="text" required placeholder="Nature of Query" onChange={e => setFormData({...formData, query_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
               
               <div className="sm:col-span-2"><label className="text-[10px] font-bold block mb-1 text-slate-900">Location</label><input type="text" required placeholder="Location" onChange={e => setFormData({...formData, location: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 placeholder-slate-400" /></div>
+              <CustomerGroupScopeSelect authFetch={authFetch} value={formData.scope_group_ids} onChange={(scope_group_ids) => setFormData({ ...formData, scope_group_ids })} />
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Service Type</label><select value={formData.service_type} onChange={e => setFormData({...formData, service_type: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option>FTTH</option><option>Enterprise</option></select></div>
               <div><label className="text-[10px] font-bold block mb-1 text-slate-900">Priority</label><select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})} className="w-full border border-slate-300 p-2.5 rounded-lg bg-slate-50 text-slate-900 font-bold"><option>Low</option><option>Medium</option><option>High</option></select></div>
               
